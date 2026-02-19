@@ -1,6 +1,7 @@
 const { Op } = require("sequelize");
 const { Consultation, Appointment, Patient, Staff, User } = require("../models");
 const { createCrudController, parsePagination } = require("../utils/crudControllerFactory");
+const { requirePaidByReferenceOrRespond } = require("../utils/paymentGate");
 
 const crud = createCrudController({
   Model: Consultation,
@@ -28,15 +29,44 @@ const includeAppointmentDetails = [
   },
 ];
 
+async function requireAppointmentConfirmedAndPaidOrRespond(res, appointment_id) {
+  if (!appointment_id) {
+    res.status(400).json({ success: false, message: "appointment_id is required" });
+    return null;
+  }
+
+  const appt = await Appointment.findByPk(appointment_id);
+  if (!appt) {
+    res.status(404).json({ success: false, message: "Appointment not found" });
+    return null;
+  }
+
+  if (appt.status !== "confirmed" && appt.status !== "completed") {
+    res.status(409).json({
+      success: false,
+      code: "APPOINTMENT_NOT_CONFIRMED",
+      message: "Consultation can only be recorded after the appointment is confirmed (payment required).",
+      appointment: { id: appt.id, status: appt.status },
+    });
+    return null;
+  }
+
+  const ok = await requirePaidByReferenceOrRespond(res, {
+    item_type: "appointment",
+    reference_id: appt.id,
+    actionLabel: "recording a consultation",
+  });
+  if (!ok) return null;
+
+  return appt;
+}
+
 // record consultation (create) - ensure appointment exists
 const recordConsultation = async (req, res) => {
   try {
     const { appointment_id, symptoms, diagnosis, notes } = req.body;
-    if (!appointment_id) {
-      return res.status(400).json({ success: false, message: "appointment_id is required" });
-    }
-    const appt = await Appointment.findByPk(appointment_id);
-    if (!appt) return res.status(404).json({ success: false, message: "Appointment not found" });
+    const appt = await requireAppointmentConfirmedAndPaidOrRespond(res, appointment_id);
+    if (!appt) return;
 
     const existing = await Consultation.findOne({ where: { appointment_id } });
     if (existing) {
@@ -52,6 +82,30 @@ const recordConsultation = async (req, res) => {
     return res.status(201).json({ success: true, data: consultation });
   } catch (error) {
     return res.status(500).json({ success: false, message: "Error recording consultation", error: error.message });
+  }
+};
+
+// create (generic) - enforce same gate as /record
+const create = async (req, res) => {
+  try {
+    const { appointment_id, symptoms, diagnosis, notes } = req.body;
+    const appt = await requireAppointmentConfirmedAndPaidOrRespond(res, appointment_id);
+    if (!appt) return;
+
+    const existing = await Consultation.findOne({ where: { appointment_id } });
+    if (existing) {
+      return res.status(400).json({ success: false, message: "Consultation already exists for this appointment" });
+    }
+
+    const consultation = await Consultation.create({
+      appointment_id,
+      symptoms: symptoms ?? null,
+      diagnosis: diagnosis ?? null,
+      notes: notes ?? null,
+    });
+    return res.status(201).json({ success: true, data: consultation });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: "Error creating consultation", error: error.message });
   }
 };
 
@@ -72,6 +126,9 @@ const updateDiagnosis = async (req, res) => {
     const { diagnosis, notes, symptoms } = req.body;
     const consultation = await Consultation.findByPk(id);
     if (!consultation) return res.status(404).json({ success: false, message: "Consultation not found" });
+
+    const appt = await requireAppointmentConfirmedAndPaidOrRespond(res, consultation.appointment_id);
+    if (!appt) return;
 
     const updated = await consultation.update({
       diagnosis: diagnosis ?? consultation.diagnosis,
@@ -171,4 +228,47 @@ const getConsultationById = async (req, res) => {
   }
 };
 
-module.exports = { ...crud, recordConsultation, updateDiagnosis, listConsultations, getConsultationById, getByAppointmentId };
+// Override CRUD update/remove to enforce the same gate
+const update = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const record = await Consultation.findByPk(id);
+    if (!record) return res.status(404).json({ success: false, message: "Consultation not found" });
+
+    const appt = await requireAppointmentConfirmedAndPaidOrRespond(res, record.appointment_id);
+    if (!appt) return;
+
+    const updated = await record.update(req.body);
+    return res.status(200).json({ success: true, data: updated });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: "Error updating consultation", error: error.message });
+  }
+};
+
+const remove = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const record = await Consultation.findByPk(id);
+    if (!record) return res.status(404).json({ success: false, message: "Consultation not found" });
+
+    const appt = await requireAppointmentConfirmedAndPaidOrRespond(res, record.appointment_id);
+    if (!appt) return;
+
+    await record.destroy();
+    return res.status(200).json({ success: true, message: "Consultation deleted" });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: "Error deleting consultation", error: error.message });
+  }
+};
+
+module.exports = {
+  ...crud,
+  create,
+  update,
+  remove,
+  recordConsultation,
+  updateDiagnosis,
+  listConsultations,
+  getConsultationById,
+  getByAppointmentId,
+};

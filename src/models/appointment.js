@@ -38,6 +38,15 @@ module.exports = (sequelize) => {
         allowNull: true,
         references: { model: "users", key: "id" },
       },
+      is_walk_in: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+      },
+      bill_amount: {
+        type: DataTypes.DECIMAL(12, 2),
+        allowNull: true,
+      },
     },
     {
       tableName: "appointments",

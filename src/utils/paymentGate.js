@@ -47,7 +47,7 @@ async function getBillingStatusByReference({ item_type, reference_id }) {
   );
   const total_amount = Number(bill?.total_amount || 0);
   const status = bill?.status || "unpaid";
-  const paid = status === "paid" || paid_amount >= total_amount;
+  const paid = status === "paid" || (total_amount > 0 && paid_amount >= total_amount);
 
   return {
     ok: true,

@@ -350,8 +350,17 @@ const setupAssociations = () => {
     Appointment.belongsTo(Service, { foreignKey: "service_id", as: "service" });
 
     // Appointment / Consultation
-    Appointment.hasOne(Consultation, { foreignKey: "appointment_id", as: "consultation" });
-    Consultation.belongsTo(Appointment, { foreignKey: "appointment_id", as: "appointment" });
+    Appointment.hasOne(Consultation, {
+      foreignKey: "appointment_id",
+      as: "consultation",
+      onDelete: "CASCADE",
+      hooks: true,
+    });
+    Consultation.belongsTo(Appointment, {
+      foreignKey: "appointment_id",
+      as: "appointment",
+      onDelete: "CASCADE",
+    });
 
     Consultation.hasOne(VitalSigns, { foreignKey: "consultation_id", as: "vitalSigns" });
     VitalSigns.belongsTo(Consultation, { foreignKey: "consultation_id", as: "consultation" });
@@ -364,6 +373,9 @@ const setupAssociations = () => {
 
     Consultation.hasMany(Bill, { foreignKey: "consultation_id", as: "bills" });
     Bill.belongsTo(Consultation, { foreignKey: "consultation_id", as: "consultation" });
+
+    Appointment.hasOne(Bill, { foreignKey: "appointment_id", as: "bill" });
+    Bill.belongsTo(Appointment, { foreignKey: "appointment_id", as: "appointment" });
 
     Consultation.hasMany(MedicalReport, { foreignKey: "consultation_id", as: "medicalReports" });
     MedicalReport.belongsTo(Consultation, { foreignKey: "consultation_id", as: "consultation" });

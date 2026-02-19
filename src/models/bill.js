@@ -19,6 +19,11 @@ module.exports = (sequelize) => {
         allowNull: true,
         references: { model: "consultations", key: "id" },
       },
+      appointment_id: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: { model: "appointments", key: "id" },
+      },
       total_amount: {
         type: DataTypes.DECIMAL(12, 2),
         allowNull: false,
@@ -36,6 +41,7 @@ module.exports = (sequelize) => {
       indexes: [
         { fields: ["patient_id"] },
         { fields: ["consultation_id"] },
+        { fields: ["appointment_id"] },
         { fields: ["status"] },
       ],
     }

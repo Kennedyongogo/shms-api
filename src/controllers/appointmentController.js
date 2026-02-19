@@ -9,18 +9,36 @@ const {
   LabOrder,
   LabOrderItem,
   LabResult,
+  Bill,
+  BillItem,
+  Payment,
+  VitalSigns,
+  Prescription,
+  PrescriptionItem,
+  DispenseRecord,
+  MedicalReport,
 } = require("../models");
 const { parsePagination } = require("../utils/crudControllerFactory");
 const { requirePaidByReferenceOrRespond } = require("../utils/paymentGate");
 
 const bookAppointment = async (req, res) => {
   try {
-    const { patient_id, doctor_id, service_id, appointment_date, created_by } =
+    const { patient_id, doctor_id, service_id, appointment_date, created_by, is_walk_in, bill_amount } =
       req.body;
     if (!patient_id || !doctor_id || !appointment_date) {
       return res.status(400).json({
         success: false,
         message: "patient_id, doctor_id, appointment_date are required",
+      });
+    }
+
+    const billAmountProvided =
+      bill_amount !== undefined && bill_amount !== null && String(bill_amount).trim() !== "";
+    const billAmountNumber = billAmountProvided ? Number(bill_amount) : null;
+    if (billAmountProvided && (!Number.isFinite(billAmountNumber) || billAmountNumber < 0)) {
+      return res.status(400).json({
+        success: false,
+        message: "bill_amount must be a valid number >= 0",
       });
     }
 
@@ -31,7 +49,35 @@ const bookAppointment = async (req, res) => {
       appointment_date,
       status: "pending",
       created_by: created_by ?? null,
+      is_walk_in: !!is_walk_in,
+      bill_amount: billAmountNumber,
     });
+
+    // Walk-in + pending: auto-create unpaid billing record (appointment-linked bill)
+    if (appt.is_walk_in && appt.status === "pending") {
+      const service = service_id
+        ? await Service.findByPk(service_id, { attributes: ["id", "price"] })
+        : null;
+      const amount = billAmountProvided
+        ? billAmountNumber
+        : Number(service?.price ?? 0);
+
+      const bill = await Bill.create({
+        patient_id: appt.patient_id,
+        consultation_id: null,
+        appointment_id: appt.id,
+        total_amount: amount,
+        status: "unpaid",
+      });
+
+      await BillItem.create({
+        bill_id: bill.id,
+        item_type: "appointment",
+        reference_id: appt.id,
+        amount,
+      });
+    }
+
     return res.status(201).json({ success: true, data: appt });
   } catch (error) {
     return res
@@ -423,21 +469,65 @@ const remove = async (req, res) => {
         .status(404)
         .json({ success: false, message: "Appointment not found" });
 
-    const hasConsultation = await Consultation.findOne({
+    const deleted = {
+      consultation: false,
+      appointmentBills: 0,
+    };
+
+    const consultation = await Consultation.findOne({
       where: { appointment_id: id },
     });
-    if (hasConsultation) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Cannot delete appointment because a consultation exists. Consider cancelling instead.",
+
+    if (consultation) {
+      const consultationId = consultation.id;
+
+      await VitalSigns.destroy({ where: { consultation_id: consultationId } });
+
+      const labOrders = await LabOrder.findAll({
+        where: { consultation_id: consultationId },
+        include: [{ model: LabOrderItem, as: "items", required: false }],
       });
+      for (const order of labOrders) {
+        const items = order.items || [];
+        for (const item of items) {
+          await LabResult.destroy({ where: { lab_order_item_id: item.id } });
+          await item.destroy();
+        }
+        await order.destroy();
+      }
+
+      const prescriptions = await Prescription.findAll({
+        where: { consultation_id: consultationId },
+      });
+      for (const rx of prescriptions) {
+        await DispenseRecord.destroy({ where: { prescription_id: rx.id } });
+        await PrescriptionItem.destroy({ where: { prescription_id: rx.id } });
+        await rx.destroy();
+      }
+
+      await MedicalReport.destroy({ where: { consultation_id: consultationId } });
+      await Bill.update(
+        { consultation_id: null },
+        { where: { consultation_id: consultationId } }
+      );
+      await consultation.destroy();
+      deleted.consultation = true;
     }
+
+    const appointmentBills = await Bill.findAll({
+      where: { appointment_id: id },
+    });
+    for (const bill of appointmentBills) {
+      await Payment.destroy({ where: { bill_id: bill.id } });
+      await BillItem.destroy({ where: { bill_id: bill.id } });
+      await bill.destroy();
+    }
+    deleted.appointmentBills = appointmentBills.length;
 
     await appt.destroy();
     return res
       .status(200)
-      .json({ success: true, message: "Appointment deleted" });
+      .json({ success: true, message: "Appointment deleted", deleted });
   } catch (error) {
     return res
       .status(500)
