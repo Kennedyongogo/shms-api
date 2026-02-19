@@ -1,341 +1,174 @@
-const { Consultation } = require("../models");
 const { Op } = require("sequelize");
-const {
-  logCreate,
-  logUpdate,
-  logDelete,
-  logStatusChange,
-} = require("../utils/auditLogger");
+const { Consultation, Appointment, Patient, Staff, User } = require("../models");
+const { createCrudController, parsePagination } = require("../utils/crudControllerFactory");
 
-// Create consultation (public)
-const createConsultation = async (req, res) => {
+const crud = createCrudController({
+  Model: Consultation,
+  name: "Consultation",
+  searchableFields: ["symptoms", "diagnosis", "notes"],
+});
+
+const includeAppointmentDetails = [
+  {
+    model: Appointment,
+    as: "appointment",
+    include: [
+      {
+        model: Patient,
+        as: "patient",
+        attributes: { exclude: ["password"] },
+        include: [{ model: User, as: "user", attributes: ["id", "full_name", "email", "phone"], required: false }],
+      },
+      {
+        model: Staff,
+        as: "doctor",
+        include: [{ model: User, as: "user", attributes: ["id", "full_name", "email", "phone"], required: false }],
+      },
+    ],
+  },
+];
+
+// record consultation (create) - ensure appointment exists
+const recordConsultation = async (req, res) => {
   try {
-    const {
-      fullName,
-      email,
-      phone,
-      consultationType,
-      preferredDate,
-      preferredTime,
-      message,
-    } = req.body;
-
-    // Validate required fields
-    if (!fullName || !email || !phone || !consultationType) {
-      return res.status(400).json({
-        success: false,
-        message: "Please provide fullName, email, phone, and consultationType",
-      });
+    const { appointment_id, symptoms, diagnosis, notes } = req.body;
+    if (!appointment_id) {
+      return res.status(400).json({ success: false, message: "appointment_id is required" });
     }
+    const appt = await Appointment.findByPk(appointment_id);
+    if (!appt) return res.status(404).json({ success: false, message: "Appointment not found" });
 
-    // Email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return res.status(400).json({
-        success: false,
-        message: "Please provide a valid email address",
-      });
+    const existing = await Consultation.findOne({ where: { appointment_id } });
+    if (existing) {
+      return res.status(400).json({ success: false, message: "Consultation already exists for this appointment" });
     }
 
     const consultation = await Consultation.create({
-      fullName,
-      email,
-      phone,
-      consultationType,
-      preferredDate: preferredDate || null,
-      preferredTime: preferredTime || null,
-      message: message || null,
-      status: "pending",
-      ipAddress: req.ip || req.connection.remoteAddress,
-      userAgent: req.get("User-Agent") || null,
+      appointment_id,
+      symptoms: symptoms ?? null,
+      diagnosis: diagnosis ?? null,
+      notes: notes ?? null,
     });
-
-    res.status(201).json({
-      success: true,
-      message: "Thank you for booking a consultation. We'll contact you soon to confirm your appointment.",
-      data: {
-        id: consultation.id,
-      },
-    });
+    return res.status(201).json({ success: true, data: consultation });
   } catch (error) {
-    console.error("Error creating consultation:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error booking consultation",
-      error: error.message,
-    });
+    return res.status(500).json({ success: false, message: "Error recording consultation", error: error.message });
   }
 };
 
-// Get all consultations (admin) with filters
-const getAllConsultations = async (req, res) => {
+const getByAppointmentId = async (req, res) => {
   try {
-    const {
-      page = 1,
-      limit = 10,
-      search,
-      status,
-      consultationType,
-      sortBy = "createdAt",
-      sortOrder = "DESC",
-    } = req.query;
+    const { appointment_id } = req.params;
+    const record = await Consultation.findOne({ where: { appointment_id }, include: includeAppointmentDetails });
+    if (!record) return res.status(404).json({ success: false, message: "Consultation not found" });
+    return res.status(200).json({ success: true, data: record });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: "Error fetching consultation", error: error.message });
+  }
+};
 
-    const where = {};
+const updateDiagnosis = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { diagnosis, notes, symptoms } = req.body;
+    const consultation = await Consultation.findByPk(id);
+    if (!consultation) return res.status(404).json({ success: false, message: "Consultation not found" });
 
-    if (search) {
-      where[Op.or] = [
-        { fullName: { [Op.like]: `%${search}%` } },
-        { email: { [Op.like]: `%${search}%` } },
-        { phone: { [Op.like]: `%${search}%` } },
-        { message: { [Op.like]: `%${search}%` } },
-      ];
-    }
+    const updated = await consultation.update({
+      diagnosis: diagnosis ?? consultation.diagnosis,
+      notes: notes ?? consultation.notes,
+      symptoms: symptoms ?? consultation.symptoms,
+    });
+    return res.status(200).json({ success: true, data: updated });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: "Error updating diagnosis", error: error.message });
+  }
+};
 
-    if (status) {
-      where.status = status;
-    }
+// List consultations with appointment + patient + doctor details (supports search)
+const listConsultations = async (req, res) => {
+  try {
+    const { page, limit, offset } = parsePagination(req.query);
+    const { search } = req.query;
 
-    if (consultationType) {
-      where.consultationType = consultationType;
-    }
+    const patientWhere = search
+      ? {
+          [Op.or]: [
+            { full_name: { [Op.iLike]: `%${search}%` } },
+            { email: { [Op.iLike]: `%${search}%` } },
+            { phone: { [Op.iLike]: `%${search}%` } },
+          ],
+        }
+      : undefined;
 
-    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const where = search
+      ? {
+          [Op.or]: [
+            { symptoms: { [Op.iLike]: `%${search}%` } },
+            { diagnosis: { [Op.iLike]: `%${search}%` } },
+            { notes: { [Op.iLike]: `%${search}%` } },
+            { appointment_id: { [Op.iLike]: `%${search}%` } },
+          ],
+        }
+      : {};
 
     const { count, rows } = await Consultation.findAndCountAll({
       where,
-      limit: parseInt(limit),
-      offset: parseInt(offset),
-      order: [[sortBy, sortOrder]],
+      limit,
+      offset,
+      order: [["createdAt", "DESC"]],
+      include: [
+        {
+          model: Appointment,
+          as: "appointment",
+          required: true,
+          include: [
+            {
+              model: Patient,
+              as: "patient",
+              required: true,
+              where: patientWhere,
+              attributes: { exclude: ["password"] },
+              include: [
+                {
+                  model: User,
+                  as: "user",
+                  attributes: ["id", "full_name", "email", "phone"],
+                  required: false,
+                },
+              ],
+            },
+            {
+              model: Staff,
+              as: "doctor",
+              required: true,
+              include: [{ model: User, as: "user", attributes: ["id", "full_name", "email", "phone"], required: false }],
+            },
+          ],
+        },
+      ],
     });
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       data: rows,
-      pagination: {
-        total: count,
-        page: parseInt(page),
-        limit: parseInt(limit),
-        totalPages: Math.ceil(count / parseInt(limit)),
-      },
+      pagination: { total: count, page, limit, totalPages: Math.ceil(count / limit) },
     });
   } catch (error) {
-    console.error("Error fetching consultations:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error fetching consultations",
-      error: error.message,
-    });
+    return res.status(500).json({ success: false, message: "Error listing consultations", error: error.message });
   }
 };
 
-// Get consultation by ID (admin)
 const getConsultationById = async (req, res) => {
   try {
     const { id } = req.params;
-    const consultation = await Consultation.findByPk(id);
-
-    if (!consultation) {
-      return res.status(404).json({
-        success: false,
-        message: "Consultation not found",
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      data: consultation,
+    const record = await Consultation.findByPk(id, {
+      include: includeAppointmentDetails,
     });
+    if (!record) return res.status(404).json({ success: false, message: "Consultation not found" });
+    return res.status(200).json({ success: true, data: record });
   } catch (error) {
-    console.error("Error fetching consultation:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error fetching consultation",
-      error: error.message,
-    });
+    return res.status(500).json({ success: false, message: "Error fetching consultation", error: error.message });
   }
 };
 
-// Update consultation (admin)
-const updateConsultation = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const updates = req.body;
-
-    const consultation = await Consultation.findByPk(id);
-
-    if (!consultation) {
-      return res.status(404).json({
-        success: false,
-        message: "Consultation not found",
-      });
-    }
-
-    const oldValues = consultation.toJSON();
-
-    // If status is being updated, set reviewedBy and reviewedAt
-    if (updates.status && updates.status !== consultation.status) {
-      updates.reviewedBy = req.user?.id || null;
-      updates.reviewedAt = new Date();
-    }
-
-    // If scheduling, update scheduledDate
-    if (updates.status === "scheduled" && updates.scheduledDate) {
-      updates.scheduledDate = new Date(updates.scheduledDate);
-    }
-
-    updates.updatedAt = new Date();
-
-    await consultation.update(updates);
-
-    if (req.user) {
-      await logUpdate(
-        req.user.id,
-        "consultation",
-        consultation.id,
-        oldValues,
-        updates,
-        req,
-        `Updated consultation ${consultation.id}`
-      );
-
-      if (updates.status && updates.status !== oldValues.status) {
-        await logStatusChange(
-          req.user.id,
-          "consultation",
-          consultation.id,
-          oldValues.status,
-          updates.status,
-          req,
-          `Changed consultation status from ${oldValues.status} to ${updates.status}`
-        );
-      }
-    }
-
-    await consultation.reload();
-
-    res.status(200).json({
-      success: true,
-      message: "Consultation updated successfully",
-      data: consultation,
-    });
-  } catch (error) {
-    console.error("Error updating consultation:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error updating consultation",
-      error: error.message,
-    });
-  }
-};
-
-// Update consultation status (admin)
-const updateConsultationStatus = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status } = req.body;
-
-    if (!status || !["pending", "scheduled", "completed", "cancelled", "archived"].includes(status)) {
-      return res.status(400).json({
-        success: false,
-        message: "Please provide a valid status (pending, scheduled, completed, cancelled, archived)",
-      });
-    }
-
-    const consultation = await Consultation.findByPk(id);
-
-    if (!consultation) {
-      return res.status(404).json({
-        success: false,
-        message: "Consultation not found",
-      });
-    }
-
-    const oldStatus = consultation.status;
-    consultation.status = status;
-    consultation.reviewedBy = req.user?.id || null;
-    consultation.reviewedAt = new Date();
-    await consultation.save();
-
-    if (req.user) {
-      await logStatusChange(
-        req.user.id,
-        "consultation",
-        consultation.id,
-        oldStatus,
-        status,
-        req,
-        `Changed consultation status from ${oldStatus} to ${status}`
-      );
-    }
-
-    res.status(200).json({
-      success: true,
-      message: "Consultation status updated successfully",
-      data: consultation,
-    });
-  } catch (error) {
-    console.error("Error updating consultation status:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error updating consultation status",
-      error: error.message,
-    });
-  }
-};
-
-// Delete consultation (admin)
-const deleteConsultation = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const consultation = await Consultation.findByPk(id);
-
-    if (!consultation) {
-      return res.status(404).json({
-        success: false,
-        message: "Consultation not found",
-      });
-    }
-
-    const consultationData = {
-      fullName: consultation.fullName,
-      email: consultation.email,
-      consultationType: consultation.consultationType,
-      status: consultation.status,
-    };
-
-    await consultation.destroy();
-
-    if (req.user) {
-      await logDelete(
-        req.user.id,
-        "consultation",
-        consultation.id,
-        consultationData,
-        req,
-        `Deleted consultation ${consultation.id}`
-      );
-    }
-
-    res.status(200).json({
-      success: true,
-      message: "Consultation deleted successfully",
-    });
-  } catch (error) {
-    console.error("Error deleting consultation:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error deleting consultation",
-      error: error.message,
-    });
-  }
-};
-
-module.exports = {
-  createConsultation,
-  getAllConsultations,
-  getConsultationById,
-  updateConsultation,
-  updateConsultationStatus,
-  deleteConsultation,
-};
+module.exports = { ...crud, recordConsultation, updateDiagnosis, listConsultations, getConsultationById, getByAppointmentId };

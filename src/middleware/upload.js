@@ -2,74 +2,34 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 
+const uploadsRoot = path.join(__dirname, "..", "..", "uploads");
+
+const { convertToRelativePath: toRelativeUploadPath } = require("../utils/filePath");
+
 // Configure multer storage
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    // Determine upload directory based on file type
+    // Determine upload directory based on fieldname (aligned to current models)
     let uploadPath;
 
-    if (file.fieldname === "profile_image") {
-      uploadPath = path.join(__dirname, "..", "..", "uploads", "profiles");
-    } else if (
-      file.fieldname === "document" ||
-      file.fieldname === "documents" ||
-      file.fieldname === "file"
-    ) {
-      uploadPath = path.join(__dirname, "..", "..", "uploads", "documents");
-    } else if (
-      file.fieldname === "service_image" ||
-      file.fieldname === "service_images"
-    ) {
-      uploadPath = path.join(__dirname, "..", "..", "uploads", "services");
-    } else if (
-      file.fieldname === "project_image" ||
-      file.fieldname === "project_images"
-    ) {
-      uploadPath = path.join(__dirname, "..", "..", "uploads", "projects");
-    } else if (
-      file.fieldname === "image" ||
-      file.fieldname === "images"
-    ) {
-      uploadPath = path.join(__dirname, "..", "..", "uploads", "misc");
-    } else if (
-      file.fieldname === "blog_image" ||
-      file.fieldname === "blog_featured_image"
-    ) {
-      uploadPath = path.join(__dirname, "..", "..", "uploads", "posts");
-    } else if (file.fieldname === "author_image") {
-      uploadPath = path.join(__dirname, "..", "..", "uploads", "authors");
-    } else if (file.fieldname === "interest_gallery_media") {
-      uploadPath = path.join(
-        __dirname,
-        "..",
-        "..",
-        "uploads",
-        "interest-gallery"
-      );
-    } else if (file.fieldname === "profile_photo") {
-      uploadPath = path.join(__dirname, "..", "..", "uploads", "marketplace-profiles");
-    } else if (
-      file.fieldname === "training_event_image" ||
-      file.fieldname === "training_event_images"
-    ) {
-      uploadPath = path.join(__dirname, "..", "..", "uploads", "training-events");
-    } else if (
-      file.fieldname === "grant_image" ||
-      file.fieldname === "grant_images"
-    ) {
-      uploadPath = path.join(__dirname, "..", "..", "uploads", "grants");
-    } else if (
-      file.fieldname === "partner_logo" ||
-      file.fieldname === "partner_logos"
-    ) {
-      uploadPath = path.join(__dirname, "..", "..", "uploads", "partners");
-    } else if (
-      file.fieldname === "listing_image" ||
-      file.fieldname === "listing_images"
-    ) {
-      uploadPath = path.join(__dirname, "..", "..", "uploads", "marketplace-listings");
+    if (file.fieldname === "service_image" || file.fieldname === "service_images") {
+      uploadPath = path.join(uploadsRoot, "services");
+    } else if (file.fieldname === "event_banner") {
+      uploadPath = path.join(uploadsRoot, "events", "banners");
+    } else if (file.fieldname === "event_image" || file.fieldname === "event_images") {
+      uploadPath = path.join(uploadsRoot, "events", "images");
+    } else if (file.fieldname === "news_featured_image") {
+      uploadPath = path.join(uploadsRoot, "news", "featured");
+    } else if (file.fieldname === "news_image" || file.fieldname === "news_images") {
+      uploadPath = path.join(uploadsRoot, "news", "images");
+    } else if (file.fieldname === "hospital_logo" || file.fieldname === "logo") {
+      uploadPath = path.join(uploadsRoot, "hospitals");
+    } else if (file.fieldname === "medical_attachment" || file.fieldname === "medical_attachments") {
+      uploadPath = path.join(uploadsRoot, "medical-attachments");
+    } else if (file.fieldname === "profile_image") {
+      uploadPath = path.join(uploadsRoot, "users", "profile-images");
     } else {
-      uploadPath = path.join(__dirname, "..", "..", "uploads", "misc");
+      uploadPath = path.join(uploadsRoot, "misc");
     }
 
 
@@ -146,57 +106,29 @@ const upload = multer({
   },
 });
 
-// Middleware for single profile picture upload
-const uploadProfileImage = upload.single("profile_image");
-
-// Middleware for single document upload
-const uploadDocument = upload.single("document");
-
-// Middleware for file upload (generic)
-const uploadFile = upload.single("file");
-
-// Middleware for multiple documents upload
-const uploadDocuments = upload.array("documents", 10); // Max 10 files
-
-// Middleware for blog featured image
-const uploadBlogImage = upload.single("blog_image");
-
-// Middleware for blog assets (featured + author image)
-const uploadBlogAssets = upload.fields([
-  { name: "blog_image", maxCount: 1 },
-  { name: "author_image", maxCount: 1 },
-]);
-
-// Middleware for mixed uploads (multiple fields)
-const uploadMixed = upload.fields([
-  { name: "profile_image", maxCount: 1 },
-  { name: "document", maxCount: 1 },
-  { name: "documents", maxCount: 10 },
-]);
-
-// Middleware for interest gallery media (single file - either image or video)
-const uploadInterestGalleryMedia = upload.single("interest_gallery_media");
-
-// Middleware for service image
+// Middleware for service images (Service.image_path / ServiceImage.image_path)
 const uploadServiceImage = upload.single("service_image");
+const uploadServiceImages = upload.array("service_images", 10);
 
-// Middleware for project image
-const uploadProjectImage = upload.single("project_image");
+// Event uploads (Event.banner_image_path, EventImage.image_path)
+const uploadEventBanner = upload.single("event_banner");
+const uploadEventImage = upload.single("event_image");
+const uploadEventImages = upload.array("event_images", 20);
 
-// Middleware for marketplace user profile photo (public portal)
-const uploadMarketplaceProfilePhoto = upload.single("profile_photo");
+// News uploads (News.featured_image_path, NewsImage.image_path)
+const uploadNewsFeaturedImage = upload.single("news_featured_image");
+const uploadNewsImage = upload.single("news_image");
+const uploadNewsImages = upload.array("news_images", 20);
 
-// Middleware for training event image
-const uploadTrainingEventImage = upload.single("training_event_image");
+// Middleware for hospital logo
+const uploadHospitalLogo = upload.single("hospital_logo");
 
-// Middleware for grant image
-const uploadGrantImage = upload.single("grant_image");
+// Middleware for medical attachments (MedicalAttachment.file_path)
+const uploadMedicalAttachment = upload.single("medical_attachment");
+const uploadMedicalAttachments = upload.array("medical_attachments", 10);
 
-// Middleware for partner logo
-const uploadPartnerLogo = upload.single("partner_logo");
-
-// Middleware for marketplace listing image
-const uploadListingImage = upload.single("listing_image");
+// User profile image (User.profile_image_path)
+const uploadUserProfileImage = upload.single("profile_image");
 
 // Error handling middleware for multer
 const handleUploadError = (error, req, res, next) => {
@@ -204,7 +136,7 @@ const handleUploadError = (error, req, res, next) => {
     if (error.code === "LIMIT_FILE_SIZE") {
       return res.status(400).json({
         success: false,
-        message: "File too large. Maximum size is 10MB.",
+        message: "File too large. Maximum size is 100MB.",
       });
     }
     if (error.code === "LIMIT_FILE_COUNT") {
@@ -276,23 +208,20 @@ const getFileType = (mimetype) => {
 };
 
 module.exports = {
-  uploadProfileImage,
-  uploadDocument,
-  uploadFile,
-  uploadDocuments,
-  uploadBlogImage,
-  uploadBlogAssets,
-  uploadMixed,
-  uploadInterestGalleryMedia,
   uploadServiceImage,
-  uploadProjectImage,
-  uploadMarketplaceProfilePhoto,
-  uploadTrainingEventImage,
-  uploadGrantImage,
-  uploadPartnerLogo,
-  uploadListingImage,
+  uploadServiceImages,
+  uploadEventBanner,
+  uploadEventImage,
+  uploadEventImages,
+  uploadNewsFeaturedImage,
+  uploadNewsImage,
+  uploadNewsImages,
+  uploadHospitalLogo,
+  uploadMedicalAttachment,
+  uploadMedicalAttachments,
+  uploadUserProfileImage,
   handleUploadError,
   deleteFile,
   getFileType,
-  upload, // Export base upload object as well for flexibility
+  toRelativeUploadPath,
 };

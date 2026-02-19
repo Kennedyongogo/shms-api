@@ -1,11 +1,18 @@
 const jwt = require("jsonwebtoken");
-const { AdminUser, MarketplaceUser } = require("../models");
+const { User, Role, Permission, Patient } = require("../models");
 const config = require("../config/config");
 
-// Authenticate admin users
-exports.authenticateAdmin = async (req, res, next) => {
+const extractBearerToken = (req) => {
   const authHeader = req.header("Authorization");
-  const token = authHeader && authHeader.split(" ")[1]; // Bearer TOKEN
+  return authHeader && authHeader.startsWith("Bearer ")
+    ? authHeader.split(" ")[1]
+    : null;
+};
+
+// Authenticate system users (User model)
+exports.authenticateUser = async (req, res, next) => {
+  const authHeader = req.header("Authorization");
+  const token = extractBearerToken(req);
 
   if (!token) {
     return res.status(401).json({
@@ -15,36 +22,47 @@ exports.authenticateAdmin = async (req, res, next) => {
   }
 
   try {
-    // Verify the token
     const decoded = jwt.verify(token, config.jwtSecret);
 
-    if (decoded.type !== "admin") {
+    if (decoded.type !== "user") {
       return res.status(403).json({
         success: false,
-        message: "Access denied, admin privileges required",
+        message: "Access denied, invalid token type",
       });
     }
 
-    const admin = await AdminUser.findByPk(decoded.id, {
+    const user = await User.findByPk(decoded.id, {
       attributes: { exclude: ["password"] },
     });
 
-    if (!admin || !admin.isActive) {
+    if (!user || user.status !== "active") {
       return res.status(403).json({
         success: false,
-        message: "Access denied, invalid or inactive admin",
+        message: "Access denied, invalid or inactive user",
       });
     }
 
-    // Attach user info to request
-    req.userId = admin.id;
-    req.user = admin;
-    req.userType = "admin";
-    req.adminRole = admin.role;
+    req.userId = user.id;
+    req.user = user;
+    req.userType = "user";
+
+    // Attach role name and permissions (lazy-ish; used by guards below)
+    const role = await Role.findByPk(user.role_id, {
+      include: [
+        {
+          model: Permission,
+          as: "permissions",
+          through: { attributes: [] },
+          required: false,
+        },
+      ],
+    });
+    req.role = role ? { id: role.id, name: role.name } : null;
+    req.permissions = role?.permissions?.map((p) => p.name) ?? [];
 
     next();
   } catch (error) {
-    console.error("Admin auth error:", error);
+    console.error("User auth error:", error);
     res.status(400).json({
       success: false,
       message: "Invalid token",
@@ -52,60 +70,38 @@ exports.authenticateAdmin = async (req, res, next) => {
   }
 };
 
-// Alias for authenticateAdmin (for backward compatibility)
-exports.authenticateToken = exports.authenticateAdmin;
+exports.authenticateToken = exports.authenticateUser;
 
-// Authenticate marketplace users (public portal login)
-exports.authenticateMarketplace = async (req, res, next) => {
-  const authHeader = req.header("Authorization");
-  const token = authHeader && authHeader.split(" ")[1];
-
+// Authenticate patients (Patient model) for the public portal
+exports.authenticatePatient = async (req, res, next) => {
+  const token = extractBearerToken(req);
   if (!token) {
-    return res.status(401).json({
-      success: false,
-      message: "Access denied, no token provided",
-    });
+    return res.status(401).json({ success: false, message: "Access denied, no token provided" });
   }
 
   try {
     const decoded = jwt.verify(token, config.jwtSecret);
-
-    if (decoded.type !== "marketplace") {
-      return res.status(403).json({
-        success: false,
-        message: "Access denied, invalid token type",
-      });
+    if (decoded.type !== "patient") {
+      return res.status(403).json({ success: false, message: "Access denied, invalid token type" });
     }
 
-    const user = await MarketplaceUser.findByPk(decoded.id, {
-      attributes: { exclude: ["password"] },
-    });
-
-    if (!user) {
-      return res.status(403).json({
-        success: false,
-        message: "Access denied, user not found",
-      });
+    const patient = await Patient.findByPk(decoded.id);
+    if (!patient || patient.status !== "active") {
+      return res.status(403).json({ success: false, message: "Access denied, invalid or inactive patient" });
     }
 
-    req.userId = user.id;
-    req.user = user;
-    req.userType = "marketplace";
-
+    req.patientId = patient.id;
+    req.patient = patient;
+    req.userType = "patient";
     next();
   } catch (error) {
-    console.error("Marketplace auth error:", error);
-    res.status(400).json({
-      success: false,
-      message: "Invalid or expired token",
-    });
+    res.status(400).json({ success: false, message: "Invalid token" });
   }
 };
 
 // Optional authentication (for public endpoints that might need user info)
 exports.optionalAuth = async (req, res, next) => {
-  const authHeader = req.header("Authorization");
-  const token = authHeader && authHeader.split(" ")[1];
+  const token = extractBearerToken(req);
 
   if (!token) {
     return next(); // Continue without authentication
@@ -114,16 +110,23 @@ exports.optionalAuth = async (req, res, next) => {
   try {
     const decoded = jwt.verify(token, config.jwtSecret);
 
-    if (decoded.type === "admin") {
-      const admin = await AdminUser.findByPk(decoded.id, {
+    if (decoded.type === "user") {
+      const user = await User.findByPk(decoded.id, {
         attributes: { exclude: ["password"] },
       });
 
-      if (admin && admin.isActive) {
-        req.userId = admin.id;
-        req.user = admin;
-        req.userType = "admin";
-        req.adminRole = admin.role;
+      if (user && user.status === "active") {
+        req.userId = user.id;
+        req.user = user;
+        req.userType = "user";
+      }
+    }
+    if (decoded.type === "patient") {
+      const patient = await Patient.findByPk(decoded.id);
+      if (patient && patient.status === "active") {
+        req.patientId = patient.id;
+        req.patient = patient;
+        req.userType = "patient";
       }
     }
 
@@ -134,101 +137,34 @@ exports.optionalAuth = async (req, res, next) => {
   }
 };
 
-// Optional marketplace auth: set req.userId when valid marketplace token present (no 401 if missing)
-exports.optionalAuthenticateMarketplace = async (req, res, next) => {
-  const authHeader = req.header("Authorization");
-  const token = authHeader && authHeader.split(" ")[1];
-
-  if (!token) {
-    return next();
-  }
-
-  try {
-    const decoded = jwt.verify(token, config.jwtSecret);
-    if (decoded.type !== "marketplace") return next();
-
-    const user = await MarketplaceUser.findByPk(decoded.id, { attributes: ["id"] });
-    if (user) {
-      req.userId = user.id;
-      req.user = user;
-      req.userType = "marketplace";
-    }
-    next();
-  } catch (error) {
-    next();
-  }
-};
-
-// Check if admin has super-admin role
-exports.requireSuperAdmin = (req, res, next) => {
-  if (req.userType !== "admin" || req.adminRole !== "super-admin") {
-    return res.status(403).json({
-      success: false,
-      message: "Access denied, super-admin privileges required",
-    });
-  }
-  next();
-};
-
-// Check if admin has admin role (admin or super-admin)
-exports.requireAdmin = (req, res, next) => {
-  if (
-    req.userType !== "admin" ||
-    (req.adminRole !== "admin" && req.adminRole !== "super-admin")
-  ) {
-    return res.status(403).json({
-      success: false,
-      message: "Access denied, admin privileges required",
-    });
-  }
-  next();
-};
-
-// Check if admin has any role except regular user
-exports.requireAdminOrHigher = (req, res, next) => {
-  if (req.userType !== "admin") {
-    return res.status(403).json({
-      success: false,
-      message: "Access denied, admin access required",
-    });
-  }
-  
-  if (req.adminRole === "regular user") {
-    return res.status(403).json({
-      success: false,
-      message: "Access denied, elevated privileges required",
-    });
-  }
-  
-  next();
-};
-
-// Verify admin can only access their own resources (unless super-admin)
-exports.verifyAdminOwnership = (userIdParam = "id") => {
+// Require one of the specified role names (e.g. ["admin"])
+exports.requireRoles = (roleNames = []) => {
+  const allowed = new Set(roleNames);
   return (req, res, next) => {
-    // Super admins can access all resources
-    if (req.adminRole === "super-admin") {
-      return next();
+    if (!req.user || req.userType !== "user") {
+      return res.status(401).json({ success: false, message: "Authentication required" });
     }
-
-    const resourceUserId =
-      req.params[userIdParam] ||
-      req.body[userIdParam] ||
-      req.query[userIdParam];
-
-    // If no resource user ID specified, allow (creation cases)
-    if (!resourceUserId) {
-      return next();
+    const roleName = req.role?.name;
+    if (!roleName || !allowed.has(roleName)) {
+      return res.status(403).json({ success: false, message: "Access denied, insufficient role" });
     }
+    next();
+  };
+};
 
-    // Check if accessing own resource
-    if (resourceUserId !== req.userId) {
-      return res.status(403).json({
-        success: false,
-        message: "Access denied, you can only access your own resources",
-      });
+// Require ALL specified permission names
+exports.requirePermissions = (permissionNames = []) => {
+  const needed = new Set(permissionNames);
+  return (req, res, next) => {
+    if (!req.user || req.userType !== "user") {
+      return res.status(401).json({ success: false, message: "Authentication required" });
     }
-
+    const have = new Set(req.permissions ?? []);
+    for (const p of needed) {
+      if (!have.has(p)) {
+        return res.status(403).json({ success: false, message: "Access denied, missing permission" });
+      }
+    }
     next();
   };
 };

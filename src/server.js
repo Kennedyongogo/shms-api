@@ -10,7 +10,7 @@ async function createServer() {
     await testConnections();
 
     // Wait for app initialization to complete
-    await app.appInitialized;
+    await appInitialized;
 
     const server = app.listen(PORT, () => {
       console.log(`🚀 Worker ${process.pid} listening on port ${PORT}`);

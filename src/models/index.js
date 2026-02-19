@@ -1,68 +1,113 @@
 const { sequelize } = require("../config/database");
 
-// Import all models
-const AdminUser = require("./adminUser")(sequelize);
-const Document = require("./document")(sequelize);
-const AuditTrail = require("./auditTrail")(sequelize);
-const Review = require("./review")(sequelize);
-const Blog = require("./blog")(sequelize);
-const Member = require("./member")(sequelize);
+// COMPLETE HOSPITAL MANAGEMENT SYSTEM – ALL MODELS (41)
+const Role = require("./role")(sequelize);
+const Permission = require("./permission")(sequelize);
+const RolePermission = require("./rolePermission")(sequelize);
+
+const User = require("./user")(sequelize);
+const Hospital = require("./hospital")(sequelize);
+const Department = require("./department")(sequelize);
+const Ward = require("./ward")(sequelize);
+const Bed = require("./bed")(sequelize);
+
+const Staff = require("./staff")(sequelize);
+const DoctorSchedule = require("./doctorSchedule")(sequelize);
+
+const Patient = require("./patient")(sequelize);
+const PatientAllergy = require("./patientAllergy")(sequelize);
+const PatientMedicalHistory = require("./patientMedicalHistory")(sequelize);
+
 const Service = require("./service")(sequelize);
-const Project = require("./project")(sequelize);
-const FAQ = require("./faq")(sequelize);
-const Contact = require("./contact")(sequelize);
-const QuoteRequest = require("./quoteRequest")(sequelize);
+const ServiceImage = require("./serviceImage")(sequelize);
+
+const Appointment = require("./appointment")(sequelize);
 const Consultation = require("./consultation")(sequelize);
-const NewsletterSubscriber = require("./newsletterSubscriber")(sequelize);
-const InterestGallery = require("./interestGallery")(sequelize);
-const MarketplaceUser = require("./marketplaceUser")(sequelize);
-const MarketplaceUserProfile = require("./marketplaceUserProfile")(sequelize);
+const VitalSigns = require("./vitalSigns")(sequelize);
 
-// Dynamic Form Models
-const Form = require("./form")(sequelize);
-const FormField = require("./formField")(sequelize);
-const FieldOption = require("./fieldOption")(sequelize);
-const FormSubmission = require("./formSubmission")(sequelize);
+const LabTest = require("./labTest")(sequelize);
+const LabOrder = require("./labOrder")(sequelize);
+const LabOrderItem = require("./labOrderItem")(sequelize);
+const LabResult = require("./labResult")(sequelize);
 
-// Training Opportunities Models
-const TrainingEvent = require("./trainingEvent")(sequelize);
-const Grant = require("./grant")(sequelize);
-const Partner = require("./partner")(sequelize);
-const TrainingRegistration = require("./trainingRegistration")(sequelize);
-const GrantApplication = require("./grantApplication")(sequelize);
-const FeedFormulationRequest = require("./feedFormulationRequest")(sequelize);
-const MarketplaceListing = require("./marketplaceListing")(sequelize);
+const Medication = require("./medication")(sequelize);
+const Prescription = require("./prescription")(sequelize);
+const PrescriptionItem = require("./prescriptionItem")(sequelize);
+const DispenseRecord = require("./dispenseRecord")(sequelize);
+
+const InventoryItem = require("./inventoryItem")(sequelize);
+const InventoryTransaction = require("./inventoryTransaction")(sequelize);
+const Supplier = require("./supplier")(sequelize);
+const PurchaseOrder = require("./purchaseOrder")(sequelize);
+
+const Bill = require("./bill")(sequelize);
+const BillItem = require("./billItem")(sequelize);
+const Payment = require("./payment")(sequelize);
+const InsuranceClaim = require("./insuranceClaim")(sequelize);
+
+const Admission = require("./admission")(sequelize);
+const NursingNote = require("./nursingNote")(sequelize);
+
+const MedicalReport = require("./medicalReport")(sequelize);
+const MedicalAttachment = require("./medicalAttachment")(sequelize);
+const Notification = require("./notification")(sequelize);
+const AuditLog = require("./auditLog")(sequelize);
+const SystemSetting = require("./systemSetting")(sequelize);
+
+// Events & News
+const Event = require("./event")(sequelize);
+const EventRegistration = require("./eventRegistration")(sequelize);
+const EventImage = require("./eventImage")(sequelize);
+const News = require("./news")(sequelize);
+const NewsImage = require("./newsImage")(sequelize);
 
 const models = {
-  AdminUser,
-  Document,
-  AuditTrail,
-  Review,
-  Blog,
-  Member,
+  Role,
+  Permission,
+  RolePermission,
+  User,
+  Hospital,
+  Department,
+  Ward,
+  Bed,
+  Staff,
+  DoctorSchedule,
+  Patient,
+  PatientAllergy,
+  PatientMedicalHistory,
   Service,
-  Project,
-  FAQ,
-  Contact,
-  QuoteRequest,
+  ServiceImage,
+  Appointment,
   Consultation,
-  NewsletterSubscriber,
-  InterestGallery,
-  MarketplaceUser,
-  MarketplaceUserProfile,
-  // Dynamic Form Models
-  Form,
-  FormField,
-  FieldOption,
-  FormSubmission,
-  // Training Opportunities Models
-  TrainingEvent,
-  Grant,
-  Partner,
-  TrainingRegistration,
-  GrantApplication,
-  FeedFormulationRequest,
-  MarketplaceListing,
+  VitalSigns,
+  LabTest,
+  LabOrder,
+  LabOrderItem,
+  LabResult,
+  Medication,
+  Prescription,
+  PrescriptionItem,
+  DispenseRecord,
+  InventoryItem,
+  InventoryTransaction,
+  Supplier,
+  PurchaseOrder,
+  Bill,
+  BillItem,
+  Payment,
+  InsuranceClaim,
+  Admission,
+  NursingNote,
+  MedicalReport,
+  MedicalAttachment,
+  Notification,
+  AuditLog,
+  SystemSetting,
+  Event,
+  EventRegistration,
+  EventImage,
+  News,
+  NewsImage,
 };
 
 // Initialize models in correct order (parent tables first)
@@ -70,39 +115,79 @@ const initializeModels = async () => {
   try {
     console.log("🔄 Creating/updating tables...");
 
-    // Use alter: false to prevent schema conflicts in production
     console.log("📋 Syncing tables...");
-    await AdminUser.sync({ force: false, alter: false });
-    await Document.sync({ force: false, alter: false });
-    await AuditTrail.sync({ force: false, alter: false }); // Allow schema changes for enum updates
-    await Review.sync({ force: false, alter: false });
-    await Blog.sync({ force: false, alter: false });
-    await Member.sync({ force: false, alter: false });
+
+    // 1) AUTH & ACCESS CONTROL
+    await Role.sync({ force: false, alter: false });
+    await Permission.sync({ force: false, alter: false });
+    await RolePermission.sync({ force: false, alter: false });
+    await User.sync({ force: false, alter: false });
+
+    // 2) HOSPITAL STRUCTURE
+    await Hospital.sync({ force: false, alter: false });
+    await Department.sync({ force: false, alter: false });
+    await Ward.sync({ force: false, alter: false });
+    await Bed.sync({ force: false, alter: false });
+
+    // 3) STAFF MANAGEMENT
+    await Staff.sync({ force: false, alter: false });
+    await DoctorSchedule.sync({ force: false, alter: false });
+
+    // 4) PATIENT MANAGEMENT
+    await Patient.sync({ force: false, alter: false });
+    await PatientAllergy.sync({ force: false, alter: false });
+    await PatientMedicalHistory.sync({ force: false, alter: false });
+
+    // 5) SERVICES (Public Portal)
     await Service.sync({ force: false, alter: false });
-    await Project.sync({ force: false, alter: false });
-    await FAQ.sync({ force: false, alter: false });
-    await Contact.sync({ force: false, alter: false });
-    await QuoteRequest.sync({ force: false, alter: false });
+    await ServiceImage.sync({ force: false, alter: false });
+
+    // 6) APPOINTMENT & CONSULTATION
+    await Appointment.sync({ force: false, alter: false });
     await Consultation.sync({ force: false, alter: false });
-    await NewsletterSubscriber.sync({ force: false, alter: false });
-    await InterestGallery.sync({ force: false, alter: false });
-    await MarketplaceUser.sync({ force: false, alter: false });
-    await MarketplaceUserProfile.sync({ force: false, alter: false });
+    await VitalSigns.sync({ force: false, alter: false });
 
-    // Dynamic Form Models
-    await Form.sync({ force: false, alter: false });
-    await FormField.sync({ force: false, alter: false }); // Allow schema changes for conditional logic
-    await FieldOption.sync({ force: false, alter: false });
-    await FormSubmission.sync({ force: false, alter: false });
+    // 7) LABORATORY MODULE
+    await LabTest.sync({ force: false, alter: false });
+    await LabOrder.sync({ force: false, alter: false });
+    await LabOrderItem.sync({ force: false, alter: false });
+    await LabResult.sync({ force: false, alter: false });
 
-    // Training Opportunities Models (parent tables first)
-    await TrainingEvent.sync({ force: false, alter: false });
-    await Grant.sync({ force: false, alter: false });
-    await Partner.sync({ force: false, alter: false });
-    await TrainingRegistration.sync({ force: false, alter: false });
-    await GrantApplication.sync({ force: false, alter: false });
-    await FeedFormulationRequest.sync({ force: false, alter: false });
-    await MarketplaceListing.sync({ force: false, alter: false });
+    // 8) PHARMACY MODULE
+    await Medication.sync({ force: false, alter: false });
+    await Prescription.sync({ force: false, alter: false });
+    await PrescriptionItem.sync({ force: false, alter: false });
+    await DispenseRecord.sync({ force: false, alter: false });
+
+    // 9) INVENTORY & SUPPLY CHAIN
+    await InventoryItem.sync({ force: false, alter: false });
+    await InventoryTransaction.sync({ force: false, alter: false });
+    await Supplier.sync({ force: false, alter: false });
+    await PurchaseOrder.sync({ force: false, alter: false });
+
+    // 10) BILLING & FINANCE
+    await Bill.sync({ force: false, alter: false });
+    await BillItem.sync({ force: false, alter: false });
+    await Payment.sync({ force: false, alter: false });
+    await InsuranceClaim.sync({ force: false, alter: false });
+
+    // 11) INPATIENT MODULE
+    await Admission.sync({ force: false, alter: false });
+    await NursingNote.sync({ force: false, alter: false });
+
+    // 12) DOCUMENTS & SYSTEM SUPPORT
+    await MedicalReport.sync({ force: false, alter: false });
+    await MedicalAttachment.sync({ force: false, alter: false });
+    await Notification.sync({ force: false, alter: false });
+    await AuditLog.sync({ force: false, alter: false });
+    await SystemSetting.sync({ force: false, alter: false });
+
+    // 13) NEWS & EVENTS
+    await Event.sync({ force: false, alter: false });
+    await EventRegistration.sync({ force: false, alter: false });
+    await EventImage.sync({ force: false, alter: false });
+    await News.sync({ force: false, alter: false });
+    await NewsImage.sync({ force: false, alter: false });
 
     console.log("✅ All models synced successfully");
   } catch (error) {
@@ -120,342 +205,238 @@ const initializeModels = async () => {
 
 const setupAssociations = () => {
   try {
-    // AdminUser → Document (1:Many for uploaded_by)
-    models.AdminUser.hasMany(models.Document, {
-      foreignKey: "uploaded_by",
-      as: "uploadedDocuments",
+    // Role / Permission / User
+    Role.hasMany(User, { foreignKey: "role_id", as: "users" });
+    User.belongsTo(Role, { foreignKey: "role_id", as: "role" });
+
+    Role.belongsToMany(Permission, {
+      through: RolePermission,
+      foreignKey: "role_id",
+      otherKey: "permission_id",
+      as: "permissions",
     });
-    models.Document.belongsTo(models.AdminUser, {
-      foreignKey: "uploaded_by",
-      as: "uploader",
+    Permission.belongsToMany(Role, {
+      through: RolePermission,
+      foreignKey: "permission_id",
+      otherKey: "role_id",
+      as: "roles",
     });
 
-    // AdminUser → AuditTrail (1:Many)
-    models.AdminUser.hasMany(models.AuditTrail, {
-      foreignKey: "user_id",
-      as: "auditLogs",
-    });
-    models.AuditTrail.belongsTo(models.AdminUser, {
-      foreignKey: "user_id",
-      as: "user",
-    });
+    User.hasOne(Patient, { foreignKey: "user_id", as: "patient" });
+    Patient.belongsTo(User, { foreignKey: "user_id", as: "user" });
 
-    // AdminUser → Blog (1:Many)
-    models.AdminUser.hasMany(models.Blog, {
-      foreignKey: "created_by",
-      as: "createdBlogs",
-    });
-    models.Blog.belongsTo(models.AdminUser, {
-      foreignKey: "created_by",
-      as: "creator",
-    });
+    User.hasOne(Staff, { foreignKey: "user_id", as: "staff" });
+    Staff.belongsTo(User, { foreignKey: "user_id", as: "user" });
 
-    // AdminUser → Service (1:Many)
-    models.AdminUser.hasMany(models.Service, {
-      foreignKey: "created_by",
-      as: "createdServices",
-    });
-    models.Service.belongsTo(models.AdminUser, {
-      foreignKey: "created_by",
-      as: "creator",
-    });
+    User.hasMany(Notification, { foreignKey: "user_id", as: "notifications" });
+    Notification.belongsTo(User, { foreignKey: "user_id", as: "user" });
 
-    models.AdminUser.hasMany(models.Service, {
-      foreignKey: "updated_by",
-      as: "updatedServices",
-    });
-    models.Service.belongsTo(models.AdminUser, {
-      foreignKey: "updated_by",
-      as: "updater",
-    });
+    User.hasMany(AuditLog, { foreignKey: "user_id", as: "auditLogs" });
+    AuditLog.belongsTo(User, { foreignKey: "user_id", as: "user" });
 
-    // AdminUser → Project (1:Many)
-    models.AdminUser.hasMany(models.Project, {
-      foreignKey: "created_by",
-      as: "createdProjects",
-    });
-    models.Project.belongsTo(models.AdminUser, {
-      foreignKey: "created_by",
-      as: "creator",
-    });
+    // Hospital structure
+    Hospital.hasMany(Department, { foreignKey: "hospital_id", as: "departments" });
+    Department.belongsTo(Hospital, { foreignKey: "hospital_id", as: "hospital" });
 
-    models.AdminUser.hasMany(models.Project, {
-      foreignKey: "updated_by",
-      as: "updatedProjects",
-    });
-    models.Project.belongsTo(models.AdminUser, {
-      foreignKey: "updated_by",
-      as: "updater",
-    });
+    Hospital.hasMany(Staff, { foreignKey: "hospital_id", as: "staff" });
+    Staff.belongsTo(Hospital, { foreignKey: "hospital_id", as: "hospital" });
 
-    // AdminUser → FAQ (1:Many)
-    models.AdminUser.hasMany(models.FAQ, {
-      foreignKey: "created_by",
-      as: "createdFAQs",
-    });
-    models.FAQ.belongsTo(models.AdminUser, {
-      foreignKey: "created_by",
-      as: "creator",
-    });
+    Hospital.hasMany(Patient, { foreignKey: "hospital_id", as: "patients" });
+    Patient.belongsTo(Hospital, { foreignKey: "hospital_id", as: "hospital" });
 
-    models.AdminUser.hasMany(models.FAQ, {
-      foreignKey: "updated_by",
-      as: "updatedFAQs",
-    });
-    models.FAQ.belongsTo(models.AdminUser, {
-      foreignKey: "updated_by",
-      as: "updater",
-    });
+    Hospital.hasMany(Service, { foreignKey: "hospital_id", as: "services" });
+    Service.belongsTo(Hospital, { foreignKey: "hospital_id", as: "hospital" });
 
-    // AdminUser → Contact (1:Many)
-    models.AdminUser.hasMany(models.Contact, {
-      foreignKey: "reviewedBy",
-      as: "reviewedContacts",
-    });
-    models.Contact.belongsTo(models.AdminUser, {
-      foreignKey: "reviewedBy",
-      as: "reviewer",
-    });
+    Hospital.hasMany(SystemSetting, { foreignKey: "hospital_id", as: "settings" });
+    SystemSetting.belongsTo(Hospital, { foreignKey: "hospital_id", as: "hospital" });
 
-    // AdminUser → QuoteRequest (1:Many)
-    models.AdminUser.hasMany(models.QuoteRequest, {
-      foreignKey: "reviewedBy",
-      as: "reviewedQuoteRequests",
-    });
-    models.QuoteRequest.belongsTo(models.AdminUser, {
-      foreignKey: "reviewedBy",
-      as: "reviewer",
-    });
+    Hospital.hasMany(Event, { foreignKey: "hospital_id", as: "events" });
+    Event.belongsTo(Hospital, { foreignKey: "hospital_id", as: "hospital" });
 
-    // AdminUser → Consultation (1:Many)
-    models.AdminUser.hasMany(models.Consultation, {
-      foreignKey: "reviewedBy",
-      as: "reviewedConsultations",
-    });
-    models.Consultation.belongsTo(models.AdminUser, {
-      foreignKey: "reviewedBy",
-      as: "reviewer",
-    });
+    Hospital.hasMany(News, { foreignKey: "hospital_id", as: "news" });
+    News.belongsTo(Hospital, { foreignKey: "hospital_id", as: "hospital" });
 
-    // InterestGallery Associations
-    models.AdminUser.hasMany(models.InterestGallery, {
-      foreignKey: "created_by",
-      as: "createdInterestGalleryItems",
-    });
-    models.InterestGallery.belongsTo(models.AdminUser, {
-      foreignKey: "created_by",
-      as: "creator",
-    });
+    Department.hasMany(Ward, { foreignKey: "department_id", as: "wards" });
+    Ward.belongsTo(Department, { foreignKey: "department_id", as: "department" });
 
-    models.AdminUser.hasMany(models.InterestGallery, {
-      foreignKey: "updated_by",
-      as: "updatedInterestGalleryItems",
-    });
-    models.InterestGallery.belongsTo(models.AdminUser, {
-      foreignKey: "updated_by",
-      as: "updater",
-    });
+    Department.hasMany(Staff, { foreignKey: "department_id", as: "staff" });
+    Staff.belongsTo(Department, { foreignKey: "department_id", as: "department" });
 
-    // MarketplaceUser → MarketplaceUserProfile (1:1)
-    models.MarketplaceUser.hasOne(models.MarketplaceUserProfile, {
-      foreignKey: "userId",
-      as: "profile",
-    });
-    models.MarketplaceUserProfile.belongsTo(models.MarketplaceUser, {
-      foreignKey: "userId",
-      as: "user",
-    });
+    Department.hasMany(Service, { foreignKey: "department_id", as: "services" });
+    Service.belongsTo(Department, { foreignKey: "department_id", as: "department" });
 
-    // Dynamic Form Associations
-    // Form → FormField (1:Many)
-    models.Form.hasMany(models.FormField, {
-      foreignKey: "form_id",
-      as: "fields",
+    Ward.hasMany(Bed, { foreignKey: "ward_id", as: "beds" });
+    Bed.belongsTo(Ward, { foreignKey: "ward_id", as: "ward" });
+
+    Bed.hasMany(Admission, { foreignKey: "bed_id", as: "admissions" });
+    Admission.belongsTo(Bed, { foreignKey: "bed_id", as: "bed" });
+
+    // Staff
+    Staff.hasMany(DoctorSchedule, { foreignKey: "doctor_id", as: "schedules" });
+    DoctorSchedule.belongsTo(Staff, { foreignKey: "doctor_id", as: "doctor" });
+
+    Staff.hasMany(Appointment, { foreignKey: "doctor_id", as: "appointments" });
+    Appointment.belongsTo(Staff, { foreignKey: "doctor_id", as: "doctor" });
+
+    Staff.hasMany(Prescription, { foreignKey: "doctor_id", as: "prescriptions" });
+    Prescription.belongsTo(Staff, { foreignKey: "doctor_id", as: "doctor" });
+
+    Staff.hasMany(LabOrder, { foreignKey: "doctor_id", as: "labOrders" });
+    LabOrder.belongsTo(Staff, { foreignKey: "doctor_id", as: "doctor" });
+
+    Staff.hasMany(MedicalReport, { foreignKey: "doctor_id", as: "medicalReports" });
+    MedicalReport.belongsTo(Staff, { foreignKey: "doctor_id", as: "doctor" });
+
+    Staff.hasMany(DispenseRecord, { foreignKey: "pharmacist_id", as: "dispenseRecords" });
+    DispenseRecord.belongsTo(Staff, { foreignKey: "pharmacist_id", as: "pharmacist" });
+
+    Staff.hasMany(NursingNote, { foreignKey: "nurse_id", as: "nursingNotes" });
+    NursingNote.belongsTo(Staff, { foreignKey: "nurse_id", as: "nurse" });
+
+    Staff.hasMany(LabResult, { foreignKey: "lab_technician_id", as: "labResults" });
+    LabResult.belongsTo(Staff, { foreignKey: "lab_technician_id", as: "labTechnician" });
+
+    Staff.hasMany(Event, { foreignKey: "created_by", as: "createdEvents" });
+    Event.belongsTo(Staff, { foreignKey: "created_by", as: "creator" });
+
+    Staff.hasMany(EventImage, { foreignKey: "uploaded_by", as: "uploadedEventImages" });
+    EventImage.belongsTo(Staff, { foreignKey: "uploaded_by", as: "uploader" });
+
+    Staff.hasMany(News, { foreignKey: "created_by", as: "createdNews" });
+    News.belongsTo(Staff, { foreignKey: "created_by", as: "creator" });
+
+    Staff.hasMany(NewsImage, { foreignKey: "uploaded_by", as: "uploadedNewsImages" });
+    NewsImage.belongsTo(Staff, { foreignKey: "uploaded_by", as: "uploader" });
+
+    Staff.hasMany(EventRegistration, { foreignKey: "checked_in_by", as: "checkedInRegistrations" });
+    EventRegistration.belongsTo(Staff, { foreignKey: "checked_in_by", as: "checkedInBy" });
+
+    // Patient
+    Patient.hasMany(Appointment, { foreignKey: "patient_id", as: "appointments" });
+    Appointment.belongsTo(Patient, { foreignKey: "patient_id", as: "patient" });
+
+    Patient.hasMany(PatientAllergy, { foreignKey: "patient_id", as: "allergies" });
+    PatientAllergy.belongsTo(Patient, { foreignKey: "patient_id", as: "patient" });
+
+    Patient.hasMany(PatientMedicalHistory, { foreignKey: "patient_id", as: "medicalHistory" });
+    PatientMedicalHistory.belongsTo(Patient, { foreignKey: "patient_id", as: "patient" });
+
+    Patient.hasMany(Prescription, { foreignKey: "patient_id", as: "prescriptions" });
+    Prescription.belongsTo(Patient, { foreignKey: "patient_id", as: "patient" });
+
+    Patient.hasMany(LabOrder, { foreignKey: "patient_id", as: "labOrders" });
+    LabOrder.belongsTo(Patient, { foreignKey: "patient_id", as: "patient" });
+
+    Patient.hasMany(Bill, { foreignKey: "patient_id", as: "bills" });
+    Bill.belongsTo(Patient, { foreignKey: "patient_id", as: "patient" });
+
+    Patient.hasMany(Admission, { foreignKey: "patient_id", as: "admissions" });
+    Admission.belongsTo(Patient, { foreignKey: "patient_id", as: "patient" });
+
+    Patient.hasMany(MedicalReport, { foreignKey: "patient_id", as: "medicalReports" });
+    MedicalReport.belongsTo(Patient, { foreignKey: "patient_id", as: "patient" });
+
+    Patient.hasMany(MedicalAttachment, { foreignKey: "patient_id", as: "attachments" });
+    MedicalAttachment.belongsTo(Patient, { foreignKey: "patient_id", as: "patient" });
+
+    Patient.hasMany(EventRegistration, { foreignKey: "patient_id", as: "eventRegistrations" });
+    EventRegistration.belongsTo(Patient, { foreignKey: "patient_id", as: "patient" });
+
+    // Service
+    Service.hasMany(ServiceImage, { foreignKey: "service_id", as: "images", onDelete: "CASCADE" });
+    ServiceImage.belongsTo(Service, { foreignKey: "service_id", as: "service" });
+
+    Service.hasMany(Appointment, { foreignKey: "service_id", as: "appointments" });
+    Appointment.belongsTo(Service, { foreignKey: "service_id", as: "service" });
+
+    // Appointment / Consultation
+    Appointment.hasOne(Consultation, { foreignKey: "appointment_id", as: "consultation" });
+    Consultation.belongsTo(Appointment, { foreignKey: "appointment_id", as: "appointment" });
+
+    Consultation.hasOne(VitalSigns, { foreignKey: "consultation_id", as: "vitalSigns" });
+    VitalSigns.belongsTo(Consultation, { foreignKey: "consultation_id", as: "consultation" });
+
+    Consultation.hasMany(LabOrder, { foreignKey: "consultation_id", as: "labOrders" });
+    LabOrder.belongsTo(Consultation, { foreignKey: "consultation_id", as: "consultation" });
+
+    Consultation.hasMany(Prescription, { foreignKey: "consultation_id", as: "prescriptions" });
+    Prescription.belongsTo(Consultation, { foreignKey: "consultation_id", as: "consultation" });
+
+    Consultation.hasMany(Bill, { foreignKey: "consultation_id", as: "bills" });
+    Bill.belongsTo(Consultation, { foreignKey: "consultation_id", as: "consultation" });
+
+    Consultation.hasMany(MedicalReport, { foreignKey: "consultation_id", as: "medicalReports" });
+    MedicalReport.belongsTo(Consultation, { foreignKey: "consultation_id", as: "consultation" });
+
+    // Lab
+    LabOrder.hasMany(LabOrderItem, { foreignKey: "lab_order_id", as: "items", onDelete: "CASCADE" });
+    LabOrderItem.belongsTo(LabOrder, { foreignKey: "lab_order_id", as: "labOrder" });
+
+    LabTest.hasMany(LabOrderItem, { foreignKey: "lab_test_id", as: "orderItems" });
+    LabOrderItem.belongsTo(LabTest, { foreignKey: "lab_test_id", as: "labTest" });
+
+    LabOrderItem.hasOne(LabResult, { foreignKey: "lab_order_item_id", as: "result" });
+    LabResult.belongsTo(LabOrderItem, { foreignKey: "lab_order_item_id", as: "labOrderItem" });
+
+    // Pharmacy
+    Prescription.hasMany(PrescriptionItem, {
+      foreignKey: "prescription_id",
+      as: "items",
       onDelete: "CASCADE",
     });
-    models.FormField.belongsTo(models.Form, {
-      foreignKey: "form_id",
-      as: "form",
-    });
+    PrescriptionItem.belongsTo(Prescription, { foreignKey: "prescription_id", as: "prescription" });
 
-    // FormField → FieldOption (1:Many)
-    models.FormField.hasMany(models.FieldOption, {
-      foreignKey: "form_field_id",
-      as: "options",
-      onDelete: "CASCADE",
-    });
-    models.FieldOption.belongsTo(models.FormField, {
-      foreignKey: "form_field_id",
-      as: "field",
-    });
+    Medication.hasMany(PrescriptionItem, { foreignKey: "medication_id", as: "prescriptionItems" });
+    PrescriptionItem.belongsTo(Medication, { foreignKey: "medication_id", as: "medication" });
 
-    // Form → FormSubmission (1:Many)
-    models.Form.hasMany(models.FormSubmission, {
-      foreignKey: "form_id",
-      as: "submissions",
-      onDelete: "CASCADE",
-    });
-    models.FormSubmission.belongsTo(models.Form, {
-      foreignKey: "form_id",
-      as: "form",
-    });
+    Prescription.hasMany(DispenseRecord, { foreignKey: "prescription_id", as: "dispenseRecords" });
+    DispenseRecord.belongsTo(Prescription, { foreignKey: "prescription_id", as: "prescription" });
 
-    // AdminUser → Form (created_by/updated_by)
-    models.AdminUser.hasMany(models.Form, {
-      foreignKey: "created_by",
-      as: "createdForms",
-    });
-    models.Form.belongsTo(models.AdminUser, {
-      foreignKey: "created_by",
-      as: "creator",
-    });
-
-    models.AdminUser.hasMany(models.Form, {
-      foreignKey: "updated_by",
-      as: "updatedForms",
-    });
-    models.Form.belongsTo(models.AdminUser, {
-      foreignKey: "updated_by",
-      as: "updater",
-    });
-
-    // AdminUser → FormSubmission (reviewed_by)
-    models.AdminUser.hasMany(models.FormSubmission, {
-      foreignKey: "reviewed_by",
-      as: "reviewedSubmissions",
-    });
-    models.FormSubmission.belongsTo(models.AdminUser, {
-      foreignKey: "reviewed_by",
-      as: "reviewer",
-    });
-
-    // Training Opportunities Associations
-    // AdminUser → TrainingEvent, Grant, Partner (created_by/updated_by)
-    models.AdminUser.hasMany(models.TrainingEvent, {
-      foreignKey: "created_by",
-      as: "createdTrainingEvents",
-    });
-    models.TrainingEvent.belongsTo(models.AdminUser, {
-      foreignKey: "created_by",
-      as: "creator",
-    });
-
-    models.AdminUser.hasMany(models.TrainingEvent, {
-      foreignKey: "updated_by",
-      as: "updatedTrainingEvents",
-    });
-    models.TrainingEvent.belongsTo(models.AdminUser, {
-      foreignKey: "updated_by",
-      as: "updater",
-    });
-
-    models.AdminUser.hasMany(models.Grant, {
-      foreignKey: "created_by",
-      as: "createdGrants",
-    });
-    models.Grant.belongsTo(models.AdminUser, {
-      foreignKey: "created_by",
-      as: "creator",
-    });
-
-    models.AdminUser.hasMany(models.Grant, {
-      foreignKey: "updated_by",
-      as: "updatedGrants",
-    });
-    models.Grant.belongsTo(models.AdminUser, {
-      foreignKey: "updated_by",
-      as: "updater",
-    });
-
-    models.AdminUser.hasMany(models.Partner, {
-      foreignKey: "created_by",
-      as: "createdPartners",
-    });
-    models.Partner.belongsTo(models.AdminUser, {
-      foreignKey: "created_by",
-      as: "creator",
-    });
-
-    models.AdminUser.hasMany(models.Partner, {
-      foreignKey: "updated_by",
-      as: "updatedPartners",
-    });
-    models.Partner.belongsTo(models.AdminUser, {
-      foreignKey: "updated_by",
-      as: "updater",
-    });
-
-    // TrainingEvent → TrainingRegistration (1:Many)
-    models.TrainingEvent.hasMany(models.TrainingRegistration, {
-      foreignKey: "training_event_id",
+    // Events
+    Event.hasMany(EventRegistration, {
+      foreignKey: "event_id",
       as: "registrations",
       onDelete: "CASCADE",
     });
-    models.TrainingRegistration.belongsTo(models.TrainingEvent, {
-      foreignKey: "training_event_id",
-      as: "trainingEvent",
-    });
+    EventRegistration.belongsTo(Event, { foreignKey: "event_id", as: "event" });
 
-    // Grant → GrantApplication (1:Many)
-    models.Grant.hasMany(models.GrantApplication, {
-      foreignKey: "grant_id",
-      as: "applications",
-      onDelete: "CASCADE",
-    });
-    models.GrantApplication.belongsTo(models.Grant, {
-      foreignKey: "grant_id",
-      as: "grant",
-    });
+    Event.hasMany(EventImage, { foreignKey: "event_id", as: "images", onDelete: "CASCADE" });
+    EventImage.belongsTo(Event, { foreignKey: "event_id", as: "event" });
 
-    // MarketplaceUser → TrainingRegistration (1:Many)
-    models.MarketplaceUser.hasMany(models.TrainingRegistration, {
-      foreignKey: "user_id",
-      as: "trainingRegistrations",
-    });
-    models.TrainingRegistration.belongsTo(models.MarketplaceUser, {
-      foreignKey: "user_id",
-      as: "user",
-    });
+    // News
+    News.hasMany(NewsImage, { foreignKey: "news_id", as: "images", onDelete: "CASCADE" });
+    NewsImage.belongsTo(News, { foreignKey: "news_id", as: "news" });
 
-    // MarketplaceUser → GrantApplication (1:Many)
-    models.MarketplaceUser.hasMany(models.GrantApplication, {
-      foreignKey: "user_id",
-      as: "grantApplications",
-    });
-    models.GrantApplication.belongsTo(models.MarketplaceUser, {
-      foreignKey: "user_id",
-      as: "user",
-    });
+    // Inventory
+    InventoryItem.hasMany(InventoryTransaction, { foreignKey: "inventory_item_id", as: "transactions" });
+    InventoryTransaction.belongsTo(InventoryItem, { foreignKey: "inventory_item_id", as: "item" });
 
-    // MarketplaceUser → FeedFormulationRequest (1:Many, optional)
-    models.MarketplaceUser.hasMany(models.FeedFormulationRequest, {
-      foreignKey: "marketplace_user_id",
-      as: "feedFormulationRequests",
-    });
-    models.FeedFormulationRequest.belongsTo(models.MarketplaceUser, {
-      foreignKey: "marketplace_user_id",
-      as: "user",
-    });
+    // Supply chain
+    Supplier.hasMany(PurchaseOrder, { foreignKey: "supplier_id", as: "purchaseOrders" });
+    PurchaseOrder.belongsTo(Supplier, { foreignKey: "supplier_id", as: "supplier" });
 
-    // MarketplaceUser → MarketplaceListing (1:Many)
-    models.MarketplaceUser.hasMany(models.MarketplaceListing, {
-      foreignKey: "user_id",
-      as: "listings",
-    });
-    models.MarketplaceListing.belongsTo(models.MarketplaceUser, {
-      foreignKey: "user_id",
-      as: "user",
-    });
+    // Billing
+    Bill.hasMany(BillItem, { foreignKey: "bill_id", as: "items", onDelete: "CASCADE" });
+    BillItem.belongsTo(Bill, { foreignKey: "bill_id", as: "bill" });
 
-    // MarketplaceListing → AdminUser (approved_by, optional)
-    models.MarketplaceListing.belongsTo(models.AdminUser, {
-      foreignKey: "approved_by",
-      as: "approver",
-    });
-    models.AdminUser.hasMany(models.MarketplaceListing, {
-      foreignKey: "approved_by",
-      as: "approvedListings",
-    });
+    Bill.hasMany(Payment, { foreignKey: "bill_id", as: "payments", onDelete: "CASCADE" });
+    Payment.belongsTo(Bill, { foreignKey: "bill_id", as: "bill" });
+
+    Bill.hasOne(InsuranceClaim, { foreignKey: "bill_id", as: "insuranceClaim" });
+    InsuranceClaim.belongsTo(Bill, { foreignKey: "bill_id", as: "bill" });
+    Patient.hasMany(InsuranceClaim, { foreignKey: "patient_id", as: "insuranceClaims" });
+    InsuranceClaim.belongsTo(Patient, { foreignKey: "patient_id", as: "patient" });
+
+    // Inpatient
+    Admission.hasMany(NursingNote, { foreignKey: "admission_id", as: "nursingNotes", onDelete: "CASCADE" });
+    NursingNote.belongsTo(Admission, { foreignKey: "admission_id", as: "admission" });
+
+    // Misc
+    User.hasMany(MedicalAttachment, { foreignKey: "uploaded_by", as: "uploadedAttachments" });
+    MedicalAttachment.belongsTo(User, { foreignKey: "uploaded_by", as: "uploader" });
+
+    User.hasMany(Appointment, { foreignKey: "created_by", as: "createdAppointments" });
+    Appointment.belongsTo(User, { foreignKey: "created_by", as: "createdBy" });
 
     console.log("✅ All associations set up successfully");
   } catch (error) {
