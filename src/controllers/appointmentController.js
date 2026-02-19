@@ -1,11 +1,22 @@
 const { Op } = require("sequelize");
-const { Appointment, Consultation, Patient, Staff, User, Service, LabOrder, LabOrderItem, LabResult } = require("../models");
+const {
+  Appointment,
+  Consultation,
+  Patient,
+  Staff,
+  User,
+  Service,
+  LabOrder,
+  LabOrderItem,
+  LabResult,
+} = require("../models");
 const { parsePagination } = require("../utils/crudControllerFactory");
 const { requirePaidByReferenceOrRespond } = require("../utils/paymentGate");
 
 const bookAppointment = async (req, res) => {
   try {
-    const { patient_id, doctor_id, service_id, appointment_date, created_by } = req.body;
+    const { patient_id, doctor_id, service_id, appointment_date, created_by } =
+      req.body;
     if (!patient_id || !doctor_id || !appointment_date) {
       return res.status(400).json({
         success: false,
@@ -23,14 +34,23 @@ const bookAppointment = async (req, res) => {
     });
     return res.status(201).json({ success: true, data: appt });
   } catch (error) {
-    return res.status(500).json({ success: false, message: "Error booking appointment", error: error.message });
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Error booking appointment",
+        error: error.message,
+      });
   }
 };
 
 const updateStatus = async (req, res, status) => {
   const { id } = req.params;
   const appt = await Appointment.findByPk(id);
-  if (!appt) return res.status(404).json({ success: false, message: "Appointment not found" });
+  if (!appt)
+    return res
+      .status(404)
+      .json({ success: false, message: "Appointment not found" });
 
   if (status === "confirmed" || status === "completed") {
     const ok = await requirePaidByReferenceOrRespond(res, {
@@ -49,7 +69,13 @@ const confirm = async (req, res) => {
   try {
     return await updateStatus(req, res, "confirmed");
   } catch (error) {
-    return res.status(500).json({ success: false, message: "Error confirming appointment", error: error.message });
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Error confirming appointment",
+        error: error.message,
+      });
   }
 };
 
@@ -57,7 +83,13 @@ const cancel = async (req, res) => {
   try {
     return await updateStatus(req, res, "cancelled");
   } catch (error) {
-    return res.status(500).json({ success: false, message: "Error cancelling appointment", error: error.message });
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Error cancelling appointment",
+        error: error.message,
+      });
   }
 };
 
@@ -67,15 +99,29 @@ const setStatus = async (req, res) => {
     const { status } = req.body;
     const allowed = new Set(["pending", "confirmed", "completed", "cancelled"]);
     if (!status || !allowed.has(status)) {
-      return res.status(400).json({ success: false, message: 'status must be one of: "pending", "confirmed", "completed", "cancelled"' });
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message:
+            'status must be one of: "pending", "confirmed", "completed", "cancelled"',
+        });
     }
 
     const appt = await Appointment.findByPk(id);
-    if (!appt) return res.status(404).json({ success: false, message: "Appointment not found" });
+    if (!appt)
+      return res
+        .status(404)
+        .json({ success: false, message: "Appointment not found" });
 
     const current = appt.status;
     if (current === "completed" || current === "cancelled") {
-      return res.status(400).json({ success: false, message: `Cannot change status from ${current}` });
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: `Cannot change status from ${current}`,
+        });
     }
 
     const transitions = {
@@ -87,7 +133,12 @@ const setStatus = async (req, res) => {
     }
     const can = transitions[current]?.has(status);
     if (!can) {
-      return res.status(400).json({ success: false, message: `Invalid status transition: ${current} → ${status}` });
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: `Invalid status transition: ${current} → ${status}`,
+        });
     }
 
     if (status === "confirmed" || status === "completed") {
@@ -108,13 +159,22 @@ const setStatus = async (req, res) => {
             model: LabOrder,
             as: "labOrders",
             required: false,
-            include: [{ model: LabOrderItem, as: "items", required: false, include: [{ model: LabResult, as: "result", required: false }] }],
+            include: [
+              {
+                model: LabOrderItem,
+                as: "items",
+                required: false,
+                include: [{ model: LabResult, as: "result", required: false }],
+              },
+            ],
           },
         ],
       });
 
       const labOrders = consultation?.labOrders || [];
-      const hasPendingOrders = labOrders.some((o) => o.status !== "completed" && o.status !== "cancelled");
+      const hasPendingOrders = labOrders.some(
+        (o) => o.status !== "completed" && o.status !== "cancelled",
+      );
       const hasMissingResults = labOrders
         .filter((o) => o.status !== "cancelled")
         .some((o) => (o.items || []).some((it) => !it.result));
@@ -122,7 +182,8 @@ const setStatus = async (req, res) => {
       if (hasPendingOrders || hasMissingResults) {
         return res.status(400).json({
           success: false,
-          message: "Cannot mark appointment as completed while lab tests are pending. Complete/cancel lab orders and enter results first.",
+          message:
+            "Cannot mark appointment as completed while lab tests are pending. Complete/cancel lab orders and enter results first.",
         });
       }
     }
@@ -130,7 +191,13 @@ const setStatus = async (req, res) => {
     const updated = await appt.update({ status });
     return res.status(200).json({ success: true, data: updated });
   } catch (error) {
-    return res.status(500).json({ success: false, message: "Error updating appointment status", error: error.message });
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Error updating appointment status",
+        error: error.message,
+      });
   }
 };
 
@@ -147,10 +214,21 @@ const listByDoctor = async (req, res) => {
     return res.status(200).json({
       success: true,
       data: rows,
-      pagination: { total: count, page, limit, totalPages: Math.ceil(count / limit) },
+      pagination: {
+        total: count,
+        page,
+        limit,
+        totalPages: Math.ceil(count / limit),
+      },
     });
   } catch (error) {
-    return res.status(500).json({ success: false, message: "Error listing appointments", error: error.message });
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Error listing appointments",
+        error: error.message,
+      });
   }
 };
 
@@ -167,10 +245,21 @@ const listByPatient = async (req, res) => {
     return res.status(200).json({
       success: true,
       data: rows,
-      pagination: { total: count, page, limit, totalPages: Math.ceil(count / limit) },
+      pagination: {
+        total: count,
+        page,
+        limit,
+        totalPages: Math.ceil(count / limit),
+      },
     });
   } catch (error) {
-    return res.status(500).json({ success: false, message: "Error listing appointments", error: error.message });
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Error listing appointments",
+        error: error.message,
+      });
   }
 };
 
@@ -201,9 +290,21 @@ const listAll = async (req, res) => {
         required: true,
         where: patientWhere,
         attributes: { exclude: ["password"] },
-        include: [{ model: User, as: "user", attributes: ["id", "full_name", "email", "phone"], required: false }],
+        include: [
+          {
+            model: User,
+            as: "user",
+            attributes: ["id", "full_name", "email", "phone"],
+            required: false,
+          },
+        ],
       },
-      { model: Service, as: "service", attributes: ["id", "name", "price", "status"], required: false },
+      {
+        model: Service,
+        as: "service",
+        attributes: ["id", "name", "price", "status"],
+        required: false,
+      },
       {
         model: Staff,
         as: "doctor",
@@ -236,10 +337,21 @@ const listAll = async (req, res) => {
     return res.status(200).json({
       success: true,
       data: rows,
-      pagination: { total: count, page, limit, totalPages: Math.ceil(count / limit) },
+      pagination: {
+        total: count,
+        page,
+        limit,
+        totalPages: Math.ceil(count / limit),
+      },
     });
   } catch (error) {
-    return res.status(500).json({ success: false, message: "Error listing appointments", error: error.message });
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Error listing appointments",
+        error: error.message,
+      });
   }
 };
 
@@ -252,21 +364,53 @@ const getById = async (req, res) => {
           model: Patient,
           as: "patient",
           attributes: { exclude: ["password"] },
-          include: [{ model: User, as: "user", attributes: ["id", "full_name", "email", "phone"] }],
+          include: [
+            {
+              model: User,
+              as: "user",
+              attributes: ["id", "full_name", "email", "phone"],
+            },
+          ],
         },
-        { model: Service, as: "service", attributes: ["id", "name", "price", "status"], required: false },
+        {
+          model: Service,
+          as: "service",
+          attributes: ["id", "name", "price", "status"],
+          required: false,
+        },
         {
           model: Staff,
           as: "doctor",
-          include: [{ model: User, as: "user", attributes: ["id", "full_name", "email", "phone"], required: false }],
+          include: [
+            {
+              model: User,
+              as: "user",
+              attributes: ["id", "full_name", "email", "phone"],
+              required: false,
+            },
+          ],
         },
-        { model: User, as: "createdBy", attributes: ["id", "full_name", "email"], required: false },
+        {
+          model: User,
+          as: "createdBy",
+          attributes: ["id", "full_name", "email"],
+          required: false,
+        },
       ],
     });
-    if (!appointment) return res.status(404).json({ success: false, message: "Appointment not found" });
+    if (!appointment)
+      return res
+        .status(404)
+        .json({ success: false, message: "Appointment not found" });
     return res.status(200).json({ success: true, data: appointment });
   } catch (error) {
-    return res.status(500).json({ success: false, message: "Error fetching appointment", error: error.message });
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Error fetching appointment",
+        error: error.message,
+      });
   }
 };
 
@@ -274,22 +418,45 @@ const remove = async (req, res) => {
   try {
     const { id } = req.params;
     const appt = await Appointment.findByPk(id);
-    if (!appt) return res.status(404).json({ success: false, message: "Appointment not found" });
+    if (!appt)
+      return res
+        .status(404)
+        .json({ success: false, message: "Appointment not found" });
 
-    const hasConsultation = await Consultation.findOne({ where: { appointment_id: id } });
+    const hasConsultation = await Consultation.findOne({
+      where: { appointment_id: id },
+    });
     if (hasConsultation) {
       return res.status(400).json({
         success: false,
-        message: "Cannot delete appointment because a consultation exists. Consider cancelling instead.",
+        message:
+          "Cannot delete appointment because a consultation exists. Consider cancelling instead.",
       });
     }
 
     await appt.destroy();
-    return res.status(200).json({ success: true, message: "Appointment deleted" });
+    return res
+      .status(200)
+      .json({ success: true, message: "Appointment deleted" });
   } catch (error) {
-    return res.status(500).json({ success: false, message: "Error deleting appointment", error: error.message });
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Error deleting appointment",
+        error: error.message,
+      });
   }
 };
 
-module.exports = { bookAppointment, confirm, cancel, setStatus, listByDoctor, listByPatient, listAll, getById, remove };
-
+module.exports = {
+  bookAppointment,
+  confirm,
+  cancel,
+  setStatus,
+  listByDoctor,
+  listByPatient,
+  listAll,
+  getById,
+  remove,
+};

@@ -41,7 +41,10 @@ async function getBillingStatusByReference({ item_type, reference_id }) {
   // Pick the most recent bill we can see.
   const bill = items[0].bill;
   const payments = bill?.payments || [];
-  const paid_amount = payments.reduce((sum, p) => sum + Number(p.amount_paid || 0), 0);
+  const paid_amount = payments.reduce(
+    (sum, p) => sum + Number(p.amount_paid || 0),
+    0,
+  );
   const total_amount = Number(bill?.total_amount || 0);
   const status = bill?.status || "unpaid";
   const paid = status === "paid" || paid_amount >= total_amount;
@@ -58,17 +61,28 @@ async function getBillingStatusByReference({ item_type, reference_id }) {
   };
 }
 
-async function requirePaidByReferenceOrRespond(res, { item_type, reference_id, actionLabel }) {
+async function requirePaidByReferenceOrRespond(
+  res,
+  { item_type, reference_id, actionLabel },
+) {
   const s = await getBillingStatusByReference({ item_type, reference_id });
   if (!s.ok) {
-    res.status(400).json({ success: false, code: "PAYMENT_LOOKUP_FAILED", message: s.message || "Payment lookup failed" });
+    res
+      .status(400)
+      .json({
+        success: false,
+        code: "PAYMENT_LOOKUP_FAILED",
+        message: s.message || "Payment lookup failed",
+      });
     return false;
   }
   if (!s.paid) {
     res.status(402).json({
       success: false,
       code: "PAYMENT_REQUIRED",
-      message: actionLabel ? `Payment required before ${actionLabel}` : "Payment required",
+      message: actionLabel
+        ? `Payment required before ${actionLabel}`
+        : "Payment required",
       payment: {
         item_type,
         reference_id,
@@ -80,5 +94,7 @@ async function requirePaidByReferenceOrRespond(res, { item_type, reference_id, a
   return true;
 }
 
-module.exports = { getBillingStatusByReference, requirePaidByReferenceOrRespond };
-
+module.exports = {
+  getBillingStatusByReference,
+  requirePaidByReferenceOrRespond,
+};

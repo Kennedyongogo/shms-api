@@ -6,11 +6,16 @@ const recordDispensing = async (req, res) => {
   try {
     const { prescription_id, pharmacist_id, dispense_date } = req.body;
     if (!prescription_id) {
-      return res.status(400).json({ success: false, message: "prescription_id is required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "prescription_id is required" });
     }
 
     const pres = await Prescription.findByPk(prescription_id);
-    if (!pres) return res.status(404).json({ success: false, message: "Prescription not found" });
+    if (!pres)
+      return res
+        .status(404)
+        .json({ success: false, message: "Prescription not found" });
 
     const ok = await requirePaidByReferenceOrRespond(res, {
       item_type: "prescription",
@@ -26,7 +31,13 @@ const recordDispensing = async (req, res) => {
     });
     return res.status(201).json({ success: true, data: record });
   } catch (error) {
-    return res.status(500).json({ success: false, message: "Error recording dispensing", error: error.message });
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Error recording dispensing",
+        error: error.message,
+      });
   }
 };
 
@@ -52,10 +63,21 @@ const listDispenseRecords = async (req, res) => {
     return res.status(200).json({
       success: true,
       data: rows,
-      pagination: { total: count, page, limit, totalPages: Math.ceil(count / limit) },
+      pagination: {
+        total: count,
+        page,
+        limit,
+        totalPages: Math.ceil(count / limit),
+      },
     });
   } catch (error) {
-    return res.status(500).json({ success: false, message: "Error listing dispense records", error: error.message });
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Error listing dispense records",
+        error: error.message,
+      });
   }
 };
 
@@ -68,12 +90,24 @@ const getDispenseRecordById = async (req, res) => {
         { model: Staff, as: "pharmacist", required: false },
       ],
     });
-    if (!record) return res.status(404).json({ success: false, message: "Dispense record not found" });
+    if (!record)
+      return res
+        .status(404)
+        .json({ success: false, message: "Dispense record not found" });
     return res.status(200).json({ success: true, data: record });
   } catch (error) {
-    return res.status(500).json({ success: false, message: "Error fetching dispense record", error: error.message });
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Error fetching dispense record",
+        error: error.message,
+      });
   }
 };
 
-module.exports = { recordDispensing, listDispenseRecords, getDispenseRecordById };
-
+module.exports = {
+  recordDispensing,
+  listDispenseRecords,
+  getDispenseRecordById,
+};

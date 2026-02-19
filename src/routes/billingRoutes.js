@@ -8,4 +8,3 @@ router.post("/:bill_id/items", billingController.addBillItems);
 router.get("/by-reference", billingController.getByReference);
 
 module.exports = router;
-

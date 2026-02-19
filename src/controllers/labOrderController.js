@@ -1,5 +1,15 @@
 const { Op } = require("sequelize");
-const { LabOrder, LabOrderItem, LabTest, LabResult, Consultation, Appointment, Staff, Patient, User } = require("../models");
+const {
+  LabOrder,
+  LabOrderItem,
+  LabTest,
+  LabResult,
+  Consultation,
+  Appointment,
+  Staff,
+  Patient,
+  User,
+} = require("../models");
 const { parsePagination } = require("../utils/crudControllerFactory");
 const { sequelize } = require("../config/database");
 const { requirePaidByReferenceOrRespond } = require("../utils/paymentGate");
@@ -16,29 +26,57 @@ const createLabOrder = async (req, res) => {
   try {
     const { patient_id, doctor_id, consultation_id, items } = req.body;
     if (!patient_id) {
-      return res.status(400).json({ success: false, message: "patient_id is required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "patient_id is required" });
     }
 
     let finalDoctorId = doctor_id ?? null;
 
     if (!isAdmin(req)) {
       const staff = await getCurrentStaff(req);
-      if (!staff) return res.status(403).json({ success: false, message: "Access denied: staff account required" });
+      if (!staff)
+        return res
+          .status(403)
+          .json({
+            success: false,
+            message: "Access denied: staff account required",
+          });
 
       if (!consultation_id) {
-        return res.status(400).json({ success: false, message: "consultation_id is required" });
+        return res
+          .status(400)
+          .json({ success: false, message: "consultation_id is required" });
       }
 
       const consultation = await Consultation.findByPk(consultation_id);
-      if (!consultation) return res.status(404).json({ success: false, message: "Consultation not found" });
+      if (!consultation)
+        return res
+          .status(404)
+          .json({ success: false, message: "Consultation not found" });
 
       const appt = await Appointment.findByPk(consultation.appointment_id);
-      if (!appt) return res.status(404).json({ success: false, message: "Appointment not found" });
+      if (!appt)
+        return res
+          .status(404)
+          .json({ success: false, message: "Appointment not found" });
       if (String(appt.doctor_id) !== String(staff.id)) {
-        return res.status(403).json({ success: false, message: "Access denied: only assigned doctor can create lab orders for this consultation" });
+        return res
+          .status(403)
+          .json({
+            success: false,
+            message:
+              "Access denied: only assigned doctor can create lab orders for this consultation",
+          });
       }
       if (String(appt.patient_id) !== String(patient_id)) {
-        return res.status(400).json({ success: false, message: "patient_id does not match consultation appointment patient" });
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message:
+              "patient_id does not match consultation appointment patient",
+          });
       }
 
       finalDoctorId = staff.id;
@@ -48,11 +86,23 @@ const createLabOrder = async (req, res) => {
     // derive doctor_id from the appointment so the UI shows "Doctor".
     if (isAdmin(req) && !finalDoctorId && consultation_id) {
       const consultation = await Consultation.findByPk(consultation_id);
-      if (!consultation) return res.status(404).json({ success: false, message: "Consultation not found" });
+      if (!consultation)
+        return res
+          .status(404)
+          .json({ success: false, message: "Consultation not found" });
       const appt = await Appointment.findByPk(consultation.appointment_id);
-      if (!appt) return res.status(404).json({ success: false, message: "Appointment not found" });
+      if (!appt)
+        return res
+          .status(404)
+          .json({ success: false, message: "Appointment not found" });
       if (String(appt.patient_id) !== String(patient_id)) {
-        return res.status(400).json({ success: false, message: "patient_id does not match consultation appointment patient" });
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message:
+              "patient_id does not match consultation appointment patient",
+          });
       }
       finalDoctorId = appt.doctor_id;
     }
@@ -74,10 +124,18 @@ const createLabOrder = async (req, res) => {
       if (rows.length) await LabOrderItem.bulkCreate(rows);
     }
 
-    const reloaded = await LabOrder.findByPk(order.id, { include: [{ model: LabOrderItem, as: "items" }] });
+    const reloaded = await LabOrder.findByPk(order.id, {
+      include: [{ model: LabOrderItem, as: "items" }],
+    });
     return res.status(201).json({ success: true, data: reloaded });
   } catch (error) {
-    return res.status(500).json({ success: false, message: "Error creating lab order", error: error.message });
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Error creating lab order",
+        error: error.message,
+      });
   }
 };
 
@@ -85,12 +143,26 @@ const updateStatus = async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
-    const allowed = new Set(["pending", "in_progress", "completed", "cancelled"]);
+    const allowed = new Set([
+      "pending",
+      "in_progress",
+      "completed",
+      "cancelled",
+    ]);
     if (!status || !allowed.has(status)) {
-      return res.status(400).json({ success: false, message: 'status must be one of: "pending", "in_progress", "completed", "cancelled"' });
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message:
+            'status must be one of: "pending", "in_progress", "completed", "cancelled"',
+        });
     }
     const order = await LabOrder.findByPk(id);
-    if (!order) return res.status(404).json({ success: false, message: "Lab order not found" });
+    if (!order)
+      return res
+        .status(404)
+        .json({ success: false, message: "Lab order not found" });
 
     if (status === "completed") {
       const ok = await requirePaidByReferenceOrRespond(res, {
@@ -104,14 +176,21 @@ const updateStatus = async (req, res) => {
     const updated = await order.update({ status });
     return res.status(200).json({ success: true, data: updated });
   } catch (error) {
-    return res.status(500).json({ success: false, message: "Error updating lab order status", error: error.message });
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Error updating lab order status",
+        error: error.message,
+      });
   }
 };
 
 const list = async (req, res) => {
   try {
     const { page, limit, offset } = parsePagination(req.query);
-    const { status, patient_id, doctor_id, consultation_id, search } = req.query;
+    const { status, patient_id, doctor_id, consultation_id, search } =
+      req.query;
 
     const where = {};
     if (status) where.status = status;
@@ -141,13 +220,27 @@ const list = async (req, res) => {
           required: true,
           where: patientWhere,
           attributes: { exclude: ["password"] },
-          include: [{ model: User, as: "user", attributes: ["id", "full_name", "email", "phone"], required: false }],
+          include: [
+            {
+              model: User,
+              as: "user",
+              attributes: ["id", "full_name", "email", "phone"],
+              required: false,
+            },
+          ],
         },
         {
           model: Staff,
           as: "doctor",
           required: false,
-          include: [{ model: User, as: "user", attributes: ["id", "full_name", "email", "phone"], required: false }],
+          include: [
+            {
+              model: User,
+              as: "user",
+              attributes: ["id", "full_name", "email", "phone"],
+              required: false,
+            },
+          ],
         },
         { model: Consultation, as: "consultation", required: false },
         {
@@ -161,9 +254,26 @@ const list = async (req, res) => {
         },
       ],
     });
-    return res.status(200).json({ success: true, data: rows, pagination: { total: count, page, limit, totalPages: Math.ceil(count / limit) } });
+    return res
+      .status(200)
+      .json({
+        success: true,
+        data: rows,
+        pagination: {
+          total: count,
+          page,
+          limit,
+          totalPages: Math.ceil(count / limit),
+        },
+      });
   } catch (error) {
-    return res.status(500).json({ success: false, message: "Error listing lab orders", error: error.message });
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Error listing lab orders",
+        error: error.message,
+      });
   }
 };
 
@@ -171,28 +281,49 @@ const remove = async (req, res) => {
   try {
     const { id } = req.params;
     const order = await LabOrder.findByPk(id, {
-      include: [{ model: LabOrderItem, as: "items", required: false, include: [{ model: LabResult, as: "result", required: false }] }],
+      include: [
+        {
+          model: LabOrderItem,
+          as: "items",
+          required: false,
+          include: [{ model: LabResult, as: "result", required: false }],
+        },
+      ],
     });
-    if (!order) return res.status(404).json({ success: false, message: "Lab order not found" });
+    if (!order)
+      return res
+        .status(404)
+        .json({ success: false, message: "Lab order not found" });
 
     const hasResults = (order.items || []).some((it) => Boolean(it.result));
     if (hasResults) {
       return res.status(400).json({
         success: false,
-        message: "Cannot delete lab order because results exist. Consider cancelling instead.",
+        message:
+          "Cannot delete lab order because results exist. Consider cancelling instead.",
       });
     }
 
     // Be robust even if DB constraints were created without ON DELETE CASCADE.
     await sequelize.transaction(async (t) => {
-      await LabOrderItem.destroy({ where: { lab_order_id: id }, transaction: t });
+      await LabOrderItem.destroy({
+        where: { lab_order_id: id },
+        transaction: t,
+      });
       await LabOrder.destroy({ where: { id }, transaction: t });
     });
-    return res.status(200).json({ success: true, message: "Lab order deleted" });
+    return res
+      .status(200)
+      .json({ success: true, message: "Lab order deleted" });
   } catch (error) {
-    return res.status(500).json({ success: false, message: "Error deleting lab order", error: error.message });
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Error deleting lab order",
+        error: error.message,
+      });
   }
 };
 
 module.exports = { createLabOrder, updateStatus, list, remove };
-
