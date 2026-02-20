@@ -4,23 +4,48 @@ const { createCrudController } = require("../utils/crudControllerFactory");
 const crud = createCrudController({
   Model: NursingNote,
   name: "NursingNote",
-  searchableFields: ["notes"],
+  searchableFields: ["notes", "blood_pressure"],
 });
 
 const recordNursingNote = async (req, res) => {
   try {
-    const { admission_id, nurse_id, notes, recorded_at } = req.body;
-    if (!admission_id || !notes) {
-      return res.status(400).json({ success: false, message: "admission_id and notes are required" });
-    }
-    const admission = await Admission.findByPk(admission_id);
-    if (!admission) return res.status(404).json({ success: false, message: "Admission not found" });
-
-    const created = await NursingNote.create({
+    const {
       admission_id,
-      nurse_id: nurse_id ?? null,
+      patient_id,
+      nurse_id,
       notes,
-      recorded_at: recorded_at ?? new Date(),
+      recorded_at,
+      date_time,
+      temperature,
+      blood_pressure,
+      pulse,
+      respiratory_rate,
+      pain_scale,
+    } = req.body;
+
+    let finalPatientId = patient_id ?? null;
+    if (admission_id) {
+      const admission = await Admission.findByPk(admission_id);
+      if (!admission) return res.status(404).json({ success: false, message: "Admission not found" });
+      finalPatientId = finalPatientId || admission.patient_id;
+    }
+    if (!admission_id && !finalPatientId) {
+      return res.status(400).json({ success: false, message: "admission_id or patient_id is required" });
+    }
+
+    const now = new Date();
+    const created = await NursingNote.create({
+      admission_id: admission_id ?? null,
+      patient_id: finalPatientId,
+      nurse_id: nurse_id ?? null,
+      notes: notes ?? null,
+      recorded_at: recorded_at ?? now,
+      date_time: date_time ?? now,
+      temperature: temperature != null ? Number(temperature) : null,
+      blood_pressure: blood_pressure ?? null,
+      pulse: pulse != null ? parseInt(pulse, 10) : null,
+      respiratory_rate: respiratory_rate != null ? parseInt(respiratory_rate, 10) : null,
+      pain_scale: pain_scale != null ? parseInt(pain_scale, 10) : null,
     });
     return res.status(201).json({ success: true, data: created });
   } catch (error) {

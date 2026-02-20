@@ -1,7 +1,10 @@
 const { Op } = require("sequelize");
 const {
   Appointment,
+  Admission,
+  Bed,
   Consultation,
+  NursingNote,
   Patient,
   Staff,
   User,
@@ -472,7 +475,27 @@ const remove = async (req, res) => {
     const deleted = {
       consultation: false,
       appointmentBills: 0,
+      admissionsDeleted: 0,
     };
+
+    // Delete admissions linked to this appointment (nursing notes, admission bills, free bed, then admission).
+    const admissions = await Admission.findAll({ where: { appointment_id: id } });
+    for (const admission of admissions) {
+      await NursingNote.destroy({ where: { admission_id: admission.id } });
+      const admissionBillItem = await BillItem.findOne({
+        where: { item_type: "admission", reference_id: admission.id },
+      });
+      if (admissionBillItem) {
+        const billId = admissionBillItem.bill_id;
+        await Payment.destroy({ where: { bill_id: billId } });
+        await BillItem.destroy({ where: { bill_id: billId } });
+        await Bill.destroy({ where: { id: billId } });
+      }
+      const bed = await Bed.findByPk(admission.bed_id);
+      if (bed) await bed.update({ status: "available" });
+      await admission.destroy();
+    }
+    deleted.admissionsDeleted = admissions.length;
 
     const consultation = await Consultation.findOne({
       where: { appointment_id: id },

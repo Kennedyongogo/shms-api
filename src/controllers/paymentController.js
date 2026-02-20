@@ -35,6 +35,21 @@ const processPayment = async (req, res) => {
     const bill = await Bill.findByPk(bill_id);
     if (!bill) return res.status(404).json({ success: false, message: "Bill not found" });
 
+    // Admission bills: do not allow payment until billing is generated (total set)
+    const admissionItem = await BillItem.findOne({
+      where: { bill_id: bill_id, item_type: "admission" },
+    });
+    if (admissionItem) {
+      const total = Number(bill.total_amount ?? 0);
+      if (total <= 0) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Payment cannot be recorded for this admission bill until billing is generated. Use 'Generate billing' for the admission first (Ward → Admissions → admission → Generate billing), then record payment.",
+        });
+      }
+    }
+
     const payment = await Payment.create({
       bill_id,
       amount_paid: amount_paid ?? 0,

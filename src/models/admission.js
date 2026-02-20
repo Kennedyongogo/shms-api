@@ -14,6 +14,16 @@ module.exports = (sequelize) => {
         allowNull: false,
         references: { model: "patients", key: "id" },
       },
+      appointment_id: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: { model: "appointments", key: "id" },
+      },
+      doctor_id: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: { model: "staff", key: "id" },
+      },
       bed_id: {
         type: DataTypes.UUID,
         allowNull: false,
@@ -39,6 +49,8 @@ module.exports = (sequelize) => {
       timestamps: true,
       indexes: [
         { fields: ["patient_id"] },
+        { fields: ["appointment_id"] },
+        { fields: ["doctor_id"] },
         { fields: ["bed_id"] },
         { fields: ["status"] },
         { fields: ["admission_date"] },
