@@ -1,5 +1,11 @@
-const { NursingNote, Admission } = require("../models");
+const { NursingNote, Admission, Staff } = require("../models");
 const { createCrudController } = require("../utils/crudControllerFactory");
+
+async function getCurrentStaff(req) {
+  if (!req.userId) return null;
+  const staff = await Staff.findOne({ where: { user_id: req.userId } });
+  return staff || null;
+}
 
 const crud = createCrudController({
   Model: NursingNote,
@@ -12,7 +18,6 @@ const recordNursingNote = async (req, res) => {
     const {
       admission_id,
       patient_id,
-      nurse_id,
       notes,
       recorded_at,
       date_time,
@@ -33,11 +38,15 @@ const recordNursingNote = async (req, res) => {
       return res.status(400).json({ success: false, message: "admission_id or patient_id is required" });
     }
 
+    // Capture the logged-in staff as the recorder (any staff can record notes, not restricted to nurses)
+    const staff = await getCurrentStaff(req);
+    const recordedByStaffId = staff?.id ?? null;
+
     const now = new Date();
     const created = await NursingNote.create({
       admission_id: admission_id ?? null,
       patient_id: finalPatientId,
-      nurse_id: nurse_id ?? null,
+      nurse_id: recordedByStaffId,
       notes: notes ?? null,
       recorded_at: recorded_at ?? now,
       date_time: date_time ?? now,
