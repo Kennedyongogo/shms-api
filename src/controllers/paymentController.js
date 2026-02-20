@@ -123,5 +123,33 @@ const listPayments = async (req, res) => {
   }
 };
 
-module.exports = { processPayment, confirmAppointmentIfBillPaid, listPayments };
+const getPaymentById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const payment = await Payment.findByPk(id, {
+      include: [
+        {
+          model: Bill,
+          as: "bill",
+          required: true,
+          include: [
+            {
+              model: Patient,
+              as: "patient",
+              required: true,
+              attributes: { exclude: ["password"] },
+              include: [{ model: User, as: "user", attributes: ["id", "full_name", "email", "phone"], required: false }],
+            },
+          ],
+        },
+      ],
+    });
+    if (!payment) return res.status(404).json({ success: false, message: "Payment not found" });
+    return res.status(200).json({ success: true, data: payment });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: "Error fetching payment", error: error.message });
+  }
+};
+
+module.exports = { processPayment, confirmAppointmentIfBillPaid, listPayments, getPaymentById };
 

@@ -7,6 +7,7 @@ const router = express.Router();
 router.post("/", labOrderController.createLabOrder);
 router.patch("/:id/status", labOrderController.updateStatus);
 router.get("/", labOrderController.list);
+router.get("/:id", labOrderController.getById);
 router.delete("/:id", requireRoles(["admin"]), labOrderController.remove);
 
 module.exports = router;

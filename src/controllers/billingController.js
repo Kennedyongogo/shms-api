@@ -1,5 +1,5 @@
 const { Op } = require("sequelize");
-const { Bill, BillItem, Consultation, Payment, Patient, User, Appointment } = require("../models");
+const { Bill, BillItem, Consultation, Payment, Patient, User, Appointment, Service } = require("../models");
 const { getBillingStatusByReference } = require("../utils/paymentGate");
 const { confirmAppointmentIfBillPaid } = require("./paymentController");
 const { parsePagination } = require("../utils/crudControllerFactory");
@@ -166,7 +166,7 @@ const listBills = async (req, res) => {
         attributes: { exclude: ["password"] },
         include: [{ model: User, as: "user", attributes: ["id", "full_name", "email", "phone"], required: false }],
       },
-      { model: Appointment, as: "appointment", required: false },
+      { model: Appointment, as: "appointment", required: false, include: [{ model: Service, as: "service", required: false }] },
       { model: Consultation, as: "consultation", required: false },
       { model: Payment, as: "payments", required: false },
     ];
@@ -206,4 +206,43 @@ const listBills = async (req, res) => {
   }
 };
 
-module.exports = { generateBill, addBillItems, getByReference, setBillStatus, listBills };
+const getBillById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const bill = await Bill.findByPk(id, {
+      include: [
+        {
+          model: Patient,
+          as: "patient",
+          attributes: { exclude: ["password"] },
+          include: [{ model: User, as: "user", attributes: ["id", "full_name", "email", "phone"], required: false }],
+        },
+        { model: Appointment, as: "appointment", required: false, include: [{ model: Service, as: "service", required: false }] },
+        { model: Consultation, as: "consultation", required: false },
+        { model: BillItem, as: "items", required: false },
+        { model: Payment, as: "payments", required: false },
+      ],
+      order: [["createdAt", "DESC"]],
+    });
+    if (!bill) return res.status(404).json({ success: false, message: "Bill not found" });
+
+    const payments = bill.payments || [];
+    const paid_amount = payments.reduce((sum, p) => sum + Number(p.amount_paid || 0), 0);
+    const total_amount = Number(bill.total_amount || 0);
+    const paid = bill.status === "paid" || (total_amount > 0 && paid_amount >= total_amount);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        ...bill.toJSON(),
+        paid_amount,
+        balance: Math.max(0, total_amount - paid_amount),
+        paid,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: "Error fetching bill", error: error.message });
+  }
+};
+
+module.exports = { generateBill, addBillItems, getByReference, setBillStatus, listBills, getBillById };

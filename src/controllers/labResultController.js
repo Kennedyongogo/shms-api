@@ -1,6 +1,7 @@
 const { Op } = require("sequelize");
 const { LabResult, LabOrderItem, LabTest, LabOrder, Patient, User, Staff } = require("../models");
 const { parsePagination } = require("../utils/crudControllerFactory");
+const { requirePaidByReferenceOrRespond } = require("../utils/paymentGate");
 
 const include = [
   {
@@ -74,6 +75,14 @@ const enterResults = async (req, res) => {
 
     const item = await LabOrderItem.findByPk(lab_order_item_id);
     if (!item) return res.status(404).json({ success: false, message: "Lab order item not found" });
+
+    // Enforce payment before results can be entered/updated.
+    const ok = await requirePaidByReferenceOrRespond(res, {
+      item_type: "lab_order",
+      reference_id: item.lab_order_id,
+      actionLabel: "entering lab results",
+    });
+    if (!ok) return;
 
     let techId = lab_technician_id ?? null;
     if (!techId && req.userId) {

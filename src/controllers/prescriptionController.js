@@ -1,4 +1,4 @@
-const { Prescription, PrescriptionItem, Medication, Consultation, Appointment, Staff } = require("../models");
+const { Prescription, PrescriptionItem, Medication, Consultation, Appointment, Staff, Bill, BillItem, sequelize } = require("../models");
 const { parsePagination } = require("../utils/crudControllerFactory");
 
 const isAdmin = (req) => req.userType === "user" && req.role?.name === "admin";
@@ -17,6 +17,7 @@ const createPrescription = async (req, res) => {
     }
 
     let finalDoctorId = doctor_id ?? null;
+    let appointmentIdForBill = null;
 
     if (!isAdmin(req)) {
       const staff = await getCurrentStaff(req);
@@ -39,30 +40,77 @@ const createPrescription = async (req, res) => {
       }
 
       finalDoctorId = staff.id;
+      appointmentIdForBill = appt.id;
     }
 
-    const prescription = await Prescription.create({
-      patient_id,
-      doctor_id: finalDoctorId,
-      consultation_id: consultation_id ?? null,
-      prescription_date: prescription_date ?? new Date(),
+    // For admin, still try to link the bill to the appointment if consultation_id is provided.
+    if (!appointmentIdForBill && consultation_id) {
+      const c = await Consultation.findByPk(consultation_id);
+      if (c?.appointment_id) appointmentIdForBill = c.appointment_id;
+    }
+
+    const prescription = await sequelize.transaction(async (t) => {
+      const created = await Prescription.create(
+        {
+          patient_id,
+          doctor_id: finalDoctorId,
+          consultation_id: consultation_id ?? null,
+          prescription_date: prescription_date ?? new Date(),
+        },
+        { transaction: t }
+      );
+
+      let rows = [];
+      let total = 0;
+
+      if (Array.isArray(items) && items.length) {
+        const medIds = items.map((i) => i.medication_id).filter(Boolean);
+        const meds = await Medication.findAll({ where: { id: medIds } });
+        const valid = new Set(meds.map((m) => m.id));
+        const priceById = new Map(meds.map((m) => [String(m.id), Number(m.unit_price || 0)]));
+
+        rows = items
+          .filter((i) => valid.has(i.medication_id))
+          .map((i) => ({
+            prescription_id: created.id,
+            medication_id: i.medication_id,
+            dosage: i.dosage ?? null,
+            frequency: i.frequency ?? null,
+            duration: i.duration ?? null,
+          }));
+
+        if (rows.length) {
+          await PrescriptionItem.bulkCreate(rows, { transaction: t });
+          total = rows.reduce((sum, r) => sum + Number(priceById.get(String(r.medication_id)) || 0), 0);
+        }
+      }
+
+      // Auto-create billing for this prescription (unpaid).
+      if (rows.length) {
+        const bill = await Bill.create(
+          {
+            patient_id,
+            consultation_id: consultation_id ?? null,
+            appointment_id: appointmentIdForBill ?? null,
+            total_amount: total,
+            status: "unpaid",
+          },
+          { transaction: t }
+        );
+
+        await BillItem.create(
+          {
+            bill_id: bill.id,
+            item_type: "prescription",
+            reference_id: created.id,
+            amount: total,
+          },
+          { transaction: t }
+        );
+      }
+
+      return created;
     });
-
-    if (Array.isArray(items) && items.length) {
-      const medIds = items.map((i) => i.medication_id).filter(Boolean);
-      const meds = await Medication.findAll({ where: { id: medIds } });
-      const valid = new Set(meds.map((m) => m.id));
-      const rows = items
-        .filter((i) => valid.has(i.medication_id))
-        .map((i) => ({
-          prescription_id: prescription.id,
-          medication_id: i.medication_id,
-          dosage: i.dosage ?? null,
-          frequency: i.frequency ?? null,
-          duration: i.duration ?? null,
-        }));
-      if (rows.length) await PrescriptionItem.bulkCreate(rows);
-    }
 
     const reloaded = await Prescription.findByPk(prescription.id, {
       include: [{ model: PrescriptionItem, as: "items" }],

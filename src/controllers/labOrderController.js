@@ -9,6 +9,8 @@ const {
   Staff,
   Patient,
   User,
+  Bill,
+  BillItem,
 } = require("../models");
 const { parsePagination } = require("../utils/crudControllerFactory");
 const { sequelize } = require("../config/database");
@@ -22,6 +24,12 @@ async function getCurrentStaff(req) {
   return staff || null;
 }
 
+function isLabTechnicianStaff(staff) {
+  const t = String(staff?.staff_type || "").toLowerCase();
+  // Accept common naming variants: "lab_technician", "laboratory technician", "lab", etc.
+  return t.includes("lab") || t.includes("laboratory") || t.includes("technician");
+}
+
 const createLabOrder = async (req, res) => {
   try {
     const { patient_id, doctor_id, consultation_id, items } = req.body;
@@ -32,6 +40,7 @@ const createLabOrder = async (req, res) => {
     }
 
     let finalDoctorId = doctor_id ?? null;
+    let appointmentIdForBill = null;
 
     if (!isAdmin(req)) {
       const staff = await getCurrentStaff(req);
@@ -80,6 +89,7 @@ const createLabOrder = async (req, res) => {
       }
 
       finalDoctorId = staff.id;
+      appointmentIdForBill = appt.id;
     }
 
     // Admin can optionally create orders; if linked to a consultation and doctor_id not provided,
@@ -105,26 +115,73 @@ const createLabOrder = async (req, res) => {
           });
       }
       finalDoctorId = appt.doctor_id;
+      appointmentIdForBill = appt.id;
     }
 
-    const order = await LabOrder.create({
-      patient_id,
-      doctor_id: finalDoctorId,
-      consultation_id: consultation_id ?? null,
-      status: "pending",
+    // If admin provided consultation_id but we didn't load it above, still try to link the bill to appointment.
+    if (!appointmentIdForBill && consultation_id) {
+      const c = await Consultation.findByPk(consultation_id);
+      if (c?.appointment_id) appointmentIdForBill = c.appointment_id;
+    }
+
+    const created = await sequelize.transaction(async (t) => {
+      const order = await LabOrder.create(
+        {
+          patient_id,
+          doctor_id: finalDoctorId,
+          consultation_id: consultation_id ?? null,
+          status: "pending",
+        },
+        { transaction: t }
+      );
+
+      let rows = [];
+      let total = 0;
+
+      if (Array.isArray(items) && items.length) {
+        const testIds = items.map((i) => i.lab_test_id).filter(Boolean);
+        const tests = await LabTest.findAll({ where: { id: testIds } });
+        const valid = new Set(tests.map((tt) => tt.id));
+        const priceById = new Map(tests.map((tt) => [String(tt.id), Number(tt.price || 0)]));
+
+        rows = items
+          .filter((i) => valid.has(i.lab_test_id))
+          .map((i) => ({ lab_order_id: order.id, lab_test_id: i.lab_test_id }));
+
+        if (rows.length) {
+          await LabOrderItem.bulkCreate(rows, { transaction: t });
+          total = rows.reduce((sum, r) => sum + Number(priceById.get(String(r.lab_test_id)) || 0), 0);
+        }
+      }
+
+      // Auto-create billing for this lab order (unpaid).
+      if (rows.length) {
+        const bill = await Bill.create(
+          {
+            patient_id,
+            consultation_id: consultation_id ?? null,
+            appointment_id: appointmentIdForBill ?? null,
+            total_amount: total,
+            status: "unpaid",
+          },
+          { transaction: t }
+        );
+
+        await BillItem.create(
+          {
+            bill_id: bill.id,
+            item_type: "lab_order",
+            reference_id: order.id,
+            amount: total,
+          },
+          { transaction: t }
+        );
+      }
+
+      return order;
     });
 
-    if (Array.isArray(items) && items.length) {
-      const testIds = items.map((i) => i.lab_test_id).filter(Boolean);
-      const tests = await LabTest.findAll({ where: { id: testIds } });
-      const valid = new Set(tests.map((t) => t.id));
-      const rows = items
-        .filter((i) => valid.has(i.lab_test_id))
-        .map((i) => ({ lab_order_id: order.id, lab_test_id: i.lab_test_id }));
-      if (rows.length) await LabOrderItem.bulkCreate(rows);
-    }
-
-    const reloaded = await LabOrder.findByPk(order.id, {
+    const reloaded = await LabOrder.findByPk(created.id, {
       include: [{ model: LabOrderItem, as: "items" }],
     });
     return res.status(201).json({ success: true, data: reloaded });
@@ -164,6 +221,46 @@ const updateStatus = async (req, res) => {
         .status(404)
         .json({ success: false, message: "Lab order not found" });
 
+    // Status updates are intended for admin or lab technician staff.
+    if (!isAdmin(req)) {
+      const staff = await getCurrentStaff(req);
+      if (!staff) {
+        return res.status(403).json({ success: false, message: "Access denied: staff account required" });
+      }
+      if (!isLabTechnicianStaff(staff)) {
+        return res.status(403).json({ success: false, message: "Access denied: lab technician required" });
+      }
+
+      // Lab technician rule:
+      // - while unpaid: only allow moving to in_progress
+      // - once paid: allow moving to completed
+      // (no cancelling from lab tech to keep workflow controlled)
+      if (status === "cancelled") {
+        return res.status(403).json({ success: false, message: "Only admins can cancel lab orders" });
+      }
+      if (status === "pending") {
+        return res.status(403).json({ success: false, message: "Lab technicians cannot set status back to pending" });
+      }
+    }
+
+    const current = order.status;
+    if (current === "completed" || current === "cancelled") {
+      return res.status(400).json({ success: false, message: `Cannot change status from ${current}` });
+    }
+
+    // Simple transitions
+    const transitions = {
+      pending: new Set(["in_progress"]),
+      in_progress: new Set(["completed"]),
+    };
+    if (status === current) {
+      return res.status(200).json({ success: true, data: order });
+    }
+    const can = transitions[current]?.has(status);
+    if (!can && !isAdmin(req)) {
+      return res.status(400).json({ success: false, message: `Invalid status transition: ${current} → ${status}` });
+    }
+
     if (status === "completed") {
       const ok = await requirePaidByReferenceOrRespond(res, {
         item_type: "lab_order",
@@ -183,6 +280,44 @@ const updateStatus = async (req, res) => {
         message: "Error updating lab order status",
         error: error.message,
       });
+  }
+};
+
+const getById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const order = await LabOrder.findByPk(id, {
+      include: [
+        {
+          model: Patient,
+          as: "patient",
+          required: false,
+          attributes: { exclude: ["password"] },
+          include: [{ model: User, as: "user", attributes: ["id", "full_name", "email", "phone"], required: false }],
+        },
+        {
+          model: Staff,
+          as: "doctor",
+          required: false,
+          include: [{ model: User, as: "user", attributes: ["id", "full_name", "email", "phone"], required: false }],
+        },
+        { model: Consultation, as: "consultation", required: false },
+        {
+          model: LabOrderItem,
+          as: "items",
+          required: false,
+          include: [
+            { model: LabTest, as: "labTest", required: false },
+            { model: LabResult, as: "result", required: false },
+          ],
+        },
+      ],
+      order: [["createdAt", "DESC"]],
+    });
+    if (!order) return res.status(404).json({ success: false, message: "Lab order not found" });
+    return res.status(200).json({ success: true, data: order });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: "Error fetching lab order", error: error.message });
   }
 };
 
@@ -326,4 +461,4 @@ const remove = async (req, res) => {
   }
 };
 
-module.exports = { createLabOrder, updateStatus, list, remove };
+module.exports = { createLabOrder, updateStatus, getById, list, remove };
