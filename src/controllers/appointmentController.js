@@ -20,6 +20,7 @@ const {
   PrescriptionItem,
   DispenseRecord,
   MedicalReport,
+  sequelize,
 } = require("../models");
 const { parsePagination } = require("../utils/crudControllerFactory");
 const { requirePaidByReferenceOrRespond } = require("../utils/paymentGate");
@@ -472,82 +473,118 @@ const remove = async (req, res) => {
         .status(404)
         .json({ success: false, message: "Appointment not found" });
 
+    const appointmentId = appt.id;
     const deleted = {
       consultation: false,
       appointmentBills: 0,
       admissionsDeleted: 0,
     };
 
-    // Delete admissions linked to this appointment (nursing notes, admission bills, free bed, then admission).
-    const admissions = await Admission.findAll({ where: { appointment_id: id } });
-    for (const admission of admissions) {
-      await NursingNote.destroy({ where: { admission_id: admission.id } });
-      const admissionBillItem = await BillItem.findOne({
-        where: { item_type: "admission", reference_id: admission.id },
+    await sequelize.transaction(async (t) => {
+      const tx = { transaction: t };
+
+      // Delete admissions linked to this appointment (nursing notes, admission bills, free bed, then admission).
+      const admissions = await Admission.findAll({
+        where: { appointment_id: appointmentId },
+        ...tx,
       });
-      if (admissionBillItem) {
-        const billId = admissionBillItem.bill_id;
-        await Payment.destroy({ where: { bill_id: billId } });
-        await BillItem.destroy({ where: { bill_id: billId } });
-        await Bill.destroy({ where: { id: billId } });
-      }
-      const bed = await Bed.findByPk(admission.bed_id);
-      if (bed) await bed.update({ status: "available" });
-      await admission.destroy();
-    }
-    deleted.admissionsDeleted = admissions.length;
-
-    const consultation = await Consultation.findOne({
-      where: { appointment_id: id },
-    });
-
-    if (consultation) {
-      const consultationId = consultation.id;
-
-      await VitalSigns.destroy({ where: { consultation_id: consultationId } });
-
-      const labOrders = await LabOrder.findAll({
-        where: { consultation_id: consultationId },
-        include: [{ model: LabOrderItem, as: "items", required: false }],
-      });
-      for (const order of labOrders) {
-        const items = order.items || [];
-        for (const item of items) {
-          await LabResult.destroy({ where: { lab_order_item_id: item.id } });
-          await item.destroy();
+      for (const admission of admissions) {
+        await NursingNote.destroy({
+          where: { admission_id: admission.id },
+          ...tx,
+        });
+        const admissionBillItem = await BillItem.findOne({
+          where: { item_type: "admission", reference_id: admission.id },
+          ...tx,
+        });
+        if (admissionBillItem) {
+          const billId = admissionBillItem.bill_id;
+          await Payment.destroy({ where: { bill_id: billId }, ...tx });
+          await BillItem.destroy({ where: { bill_id: billId }, ...tx });
+          await Bill.destroy({ where: { id: billId }, ...tx });
         }
-        await order.destroy();
+        const bed = await Bed.findByPk(admission.bed_id, tx);
+        if (bed) await bed.update({ status: "available" }, tx);
+        await admission.destroy(tx);
       }
+      deleted.admissionsDeleted = admissions.length;
 
-      const prescriptions = await Prescription.findAll({
-        where: { consultation_id: consultationId },
+      // Find and delete consultation (and all its related records) for this appointment.
+      const consultation = await Consultation.findOne({
+        where: { appointment_id: appointmentId },
+        ...tx,
       });
-      for (const rx of prescriptions) {
-        await DispenseRecord.destroy({ where: { prescription_id: rx.id } });
-        await PrescriptionItem.destroy({ where: { prescription_id: rx.id } });
-        await rx.destroy();
+
+      if (consultation) {
+        const consultationId = consultation.id;
+
+        await VitalSigns.destroy({
+          where: { consultation_id: consultationId },
+          ...tx,
+        });
+
+        const labOrders = await LabOrder.findAll({
+          where: { consultation_id: consultationId },
+          include: [{ model: LabOrderItem, as: "items", required: false }],
+          ...tx,
+        });
+        for (const order of labOrders) {
+          const items = order.items || [];
+          for (const item of items) {
+            await LabResult.destroy({
+              where: { lab_order_item_id: item.id },
+              ...tx,
+            });
+            await item.destroy(tx);
+          }
+          await order.destroy(tx);
+        }
+
+        const prescriptions = await Prescription.findAll({
+          where: { consultation_id: consultationId },
+          ...tx,
+        });
+        for (const rx of prescriptions) {
+          await DispenseRecord.destroy({
+            where: { prescription_id: rx.id },
+            ...tx,
+          });
+          await PrescriptionItem.destroy({
+            where: { prescription_id: rx.id },
+            ...tx,
+          });
+          await rx.destroy(tx);
+        }
+
+        await MedicalReport.destroy({
+          where: { consultation_id: consultationId },
+          ...tx,
+        });
+
+        // Unlink bills from consultation so we can delete the consultation row.
+        await Bill.update(
+          { consultation_id: null },
+          { where: { consultation_id: consultationId }, ...tx }
+        );
+        await consultation.destroy(tx);
+        deleted.consultation = true;
       }
 
-      await MedicalReport.destroy({ where: { consultation_id: consultationId } });
-      await Bill.update(
-        { consultation_id: null },
-        { where: { consultation_id: consultationId } }
-      );
-      await consultation.destroy();
-      deleted.consultation = true;
-    }
+      // Delete appointment-linked bills (payments, items, then bill).
+      const appointmentBills = await Bill.findAll({
+        where: { appointment_id: appointmentId },
+        ...tx,
+      });
+      for (const bill of appointmentBills) {
+        await Payment.destroy({ where: { bill_id: bill.id }, ...tx });
+        await BillItem.destroy({ where: { bill_id: bill.id }, ...tx });
+        await bill.destroy(tx);
+      }
+      deleted.appointmentBills = appointmentBills.length;
 
-    const appointmentBills = await Bill.findAll({
-      where: { appointment_id: id },
+      await appt.destroy(tx);
     });
-    for (const bill of appointmentBills) {
-      await Payment.destroy({ where: { bill_id: bill.id } });
-      await BillItem.destroy({ where: { bill_id: bill.id } });
-      await bill.destroy();
-    }
-    deleted.appointmentBills = appointmentBills.length;
 
-    await appt.destroy();
     return res
       .status(200)
       .json({ success: true, message: "Appointment deleted", deleted });

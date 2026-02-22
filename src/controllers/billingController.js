@@ -139,7 +139,7 @@ const setBillStatus = async (req, res) => {
 const listBills = async (req, res) => {
   try {
     const { page, limit, offset } = parsePagination(req.query);
-    const { search, status, patient_id, appointment_id, consultation_id } = req.query;
+    const { search, status, patient_id, appointment_id, consultation_id, item_type } = req.query;
 
     const where = {};
     if (status) where.status = status;
@@ -170,6 +170,16 @@ const listBills = async (req, res) => {
       { model: Consultation, as: "consultation", required: false },
       { model: Payment, as: "payments", required: false },
     ];
+
+    if (item_type && String(item_type).trim()) {
+      include.push({
+        model: BillItem,
+        as: "items",
+        required: true,
+        where: { item_type: String(item_type).trim() },
+        attributes: [],
+      });
+    }
 
     const { count, rows } = await Bill.findAndCountAll({
       where,

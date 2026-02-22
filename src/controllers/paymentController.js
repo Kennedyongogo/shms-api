@@ -76,7 +76,7 @@ const processPayment = async (req, res) => {
 const listPayments = async (req, res) => {
   try {
     const { page, limit, offset } = parsePagination(req.query);
-    const { search, bill_id, payment_method, from, to } = req.query;
+    const { search, bill_id, payment_method, from, to, for_lab, for_appointment, for_prescription } = req.query;
 
     const where = {};
     if (bill_id) where.bill_id = bill_id;
@@ -102,21 +102,48 @@ const listPayments = async (req, res) => {
         }
       : undefined;
 
+    const billInclude = [
+      {
+        model: Patient,
+        as: "patient",
+        required: true,
+        where: patientWhere,
+        attributes: { exclude: ["password"] },
+        include: [{ model: User, as: "user", attributes: ["id", "full_name", "email", "phone"], required: false }],
+      },
+    ];
+    if (for_lab === "1" || for_lab === "true") {
+      billInclude.push({
+        model: BillItem,
+        as: "items",
+        required: true,
+        where: { item_type: "lab_order" },
+        attributes: [],
+      });
+    } else if (for_appointment === "1" || for_appointment === "true") {
+      billInclude.push({
+        model: BillItem,
+        as: "items",
+        required: true,
+        where: { item_type: "appointment" },
+        attributes: [],
+      });
+    } else if (for_prescription === "1" || for_prescription === "true") {
+      billInclude.push({
+        model: BillItem,
+        as: "items",
+        required: true,
+        where: { item_type: "prescription" },
+        attributes: [],
+      });
+    }
+
     const include = [
       {
         model: Bill,
         as: "bill",
         required: true,
-        include: [
-          {
-            model: Patient,
-            as: "patient",
-            required: true,
-            where: patientWhere,
-            attributes: { exclude: ["password"] },
-            include: [{ model: User, as: "user", attributes: ["id", "full_name", "email", "phone"], required: false }],
-          },
-        ],
+        include: billInclude,
       },
     ];
 
