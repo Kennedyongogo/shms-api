@@ -1,4 +1,4 @@
-const { Prescription, PrescriptionItem, Medication, Consultation, Appointment, Staff, Bill, BillItem, sequelize } = require("../models");
+const { Prescription, PrescriptionItem, Medication, Consultation, Appointment, Staff, Bill, BillItem, Patient, User, sequelize } = require("../models");
 const { parsePagination } = require("../utils/crudControllerFactory");
 
 const isAdmin = (req) => req.userType === "user" && req.role?.name === "admin";
@@ -43,10 +43,13 @@ const createPrescription = async (req, res) => {
       appointmentIdForBill = appt.id;
     }
 
-    // For admin, still try to link the bill to the appointment if consultation_id is provided.
-    if (!appointmentIdForBill && consultation_id) {
-      const c = await Consultation.findByPk(consultation_id);
+    // For admin, still try to link the bill to the appointment and set doctor from appointment if consultation_id is provided.
+    if (consultation_id) {
+      const c = await Consultation.findByPk(consultation_id, {
+        include: [{ model: Appointment, as: "appointment", attributes: ["id", "doctor_id"] }],
+      });
       if (c?.appointment_id) appointmentIdForBill = c.appointment_id;
+      if (!finalDoctorId && c?.appointment?.doctor_id) finalDoctorId = c.appointment.doctor_id;
     }
 
     const prescription = await sequelize.transaction(async (t) => {
@@ -134,6 +137,45 @@ const listPrescriptions = async (req, res) => {
       limit,
       offset,
       order: [["prescription_date", "DESC"]],
+      include: [
+        {
+          model: Patient,
+          as: "patient",
+          attributes: ["id", "full_name", "email", "phone", "user_id"],
+          required: false,
+          include: [{ model: User, as: "user", attributes: ["id", "full_name", "email", "phone"], required: false }],
+        },
+        {
+          model: Staff,
+          as: "doctor",
+          attributes: ["id", "staff_type", "user_id"],
+          required: false,
+          include: [{ model: User, as: "user", attributes: ["id", "full_name", "email", "phone"], required: false }],
+        },
+        {
+          model: Consultation,
+          as: "consultation",
+          required: false,
+          attributes: ["id", "appointment_id"],
+          include: [
+            {
+              model: Appointment,
+              as: "appointment",
+              required: false,
+              attributes: ["id", "doctor_id"],
+              include: [
+                {
+                  model: Staff,
+                  as: "doctor",
+                  attributes: ["id", "staff_type", "user_id"],
+                  required: false,
+                  include: [{ model: User, as: "user", attributes: ["id", "full_name", "email", "phone"], required: false }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
     });
     return res.status(200).json({
       success: true,
@@ -150,6 +192,12 @@ const getPrescriptionById = async (req, res) => {
     const { id } = req.params;
     const prescription = await Prescription.findByPk(id, {
       include: [
+        {
+          model: Patient,
+          as: "patient",
+          attributes: { exclude: ["password"] },
+          include: [{ model: User, as: "user", attributes: ["id", "full_name", "email", "phone"] }],
+        },
         {
           model: PrescriptionItem,
           as: "items",

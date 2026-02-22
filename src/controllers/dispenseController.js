@@ -1,6 +1,12 @@
-const { DispenseRecord, Prescription, Staff } = require("../models");
+const { DispenseRecord, Prescription, Staff, User } = require("../models");
 const { parsePagination } = require("../utils/crudControllerFactory");
 const { requirePaidByReferenceOrRespond } = require("../utils/paymentGate");
+
+async function getCurrentStaff(req) {
+  if (!req.userId) return null;
+  const staff = await Staff.findOne({ where: { user_id: req.userId } });
+  return staff || null;
+}
 
 const recordDispensing = async (req, res) => {
   try {
@@ -24,9 +30,12 @@ const recordDispensing = async (req, res) => {
     });
     if (!ok) return;
 
+    const staff = await getCurrentStaff(req);
+    const finalPharmacistId = pharmacist_id ?? staff?.id ?? null;
+
     const record = await DispenseRecord.create({
       prescription_id,
-      pharmacist_id: pharmacist_id ?? null,
+      pharmacist_id: finalPharmacistId,
       dispense_date: dispense_date ?? new Date(),
     });
     return res.status(201).json({ success: true, data: record });
@@ -56,7 +65,12 @@ const listDispenseRecords = async (req, res) => {
       order: [["dispense_date", "DESC"]],
       include: [
         { model: Prescription, as: "prescription" },
-        { model: Staff, as: "pharmacist", required: false },
+        {
+          model: Staff,
+          as: "pharmacist",
+          required: false,
+          include: [{ model: User, as: "user", attributes: ["id", "full_name", "email", "phone"], required: false }],
+        },
       ],
     });
 
@@ -87,7 +101,12 @@ const getDispenseRecordById = async (req, res) => {
     const record = await DispenseRecord.findByPk(id, {
       include: [
         { model: Prescription, as: "prescription" },
-        { model: Staff, as: "pharmacist", required: false },
+        {
+          model: Staff,
+          as: "pharmacist",
+          required: false,
+          include: [{ model: User, as: "user", attributes: ["id", "full_name", "email", "phone"], required: false }],
+        },
       ],
     });
     if (!record)
