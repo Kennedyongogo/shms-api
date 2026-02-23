@@ -22,6 +22,12 @@ module.exports = (sequelize) => {
         type: DataTypes.INTEGER,
         allowNull: false,
       },
+      unit_type: {
+        type: DataTypes.STRING(20),
+        allowNull: true,
+        defaultValue: "unit",
+        comment: "unit = quantity in base units (tablets/bottles); pack = quantity in packs (multiply by item.pack_size).",
+      },
       transaction_date: {
         type: DataTypes.DATE,
         allowNull: false,

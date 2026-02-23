@@ -27,6 +27,16 @@ module.exports = (sequelize) => {
         allowNull: false,
         defaultValue: 0,
       },
+      unit: {
+        type: DataTypes.STRING(50),
+        allowNull: true,
+        comment: "Unit of measure: tablet, bottle, pack, box, ml, etc.",
+      },
+      pack_size: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        comment: "Units per pack when supplied in packs (e.g. 20 tablets per packet).",
+      },
     },
     {
       tableName: "inventory_items",
