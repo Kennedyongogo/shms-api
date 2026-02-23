@@ -1,4 +1,14 @@
-const { DispenseRecord, Prescription, Staff, User } = require("../models");
+const {
+  DispenseRecord,
+  Prescription,
+  PrescriptionItem,
+  Medication,
+  InventoryItem,
+  InventoryTransaction,
+  Staff,
+  User,
+  sequelize,
+} = require("../models");
 const { parsePagination } = require("../utils/crudControllerFactory");
 const { requirePaidByReferenceOrRespond } = require("../utils/paymentGate");
 
@@ -17,11 +27,70 @@ const recordDispensing = async (req, res) => {
         .json({ success: false, message: "prescription_id is required" });
     }
 
-    const pres = await Prescription.findByPk(prescription_id);
+    const pres = await Prescription.findByPk(prescription_id, {
+      include: [
+        {
+          model: PrescriptionItem,
+          as: "items",
+          include: [
+            {
+              model: Medication,
+              as: "medication",
+              include: [{ model: InventoryItem, as: "inventoryItem", required: false }],
+            },
+          ],
+        },
+      ],
+    });
     if (!pres)
       return res
         .status(404)
         .json({ success: false, message: "Prescription not found" });
+
+    if (!pres.items || pres.items.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Prescription has no items to dispense",
+      });
+    }
+
+    // Validate: every item must be linked to inventory and have enough stock
+    const insufficient = [];
+    const notLinked = [];
+    for (const item of pres.items) {
+      const med = item.medication;
+      if (!med) {
+        notLinked.push(item.id);
+        continue;
+      }
+      if (!med.inventory_item_id || !med.inventoryItem) {
+        notLinked.push(med.name || med.id);
+        continue;
+      }
+      const qty = item.quantity || 1;
+      if (med.inventoryItem.quantity_available < qty) {
+        insufficient.push({
+          medication: med.name,
+          required: qty,
+          available: med.inventoryItem.quantity_available,
+        });
+      }
+    }
+    if (notLinked.length) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Some medications are not linked to inventory. Link Medication to InventoryItem (inventory_item_id) before dispensing.",
+        notLinked,
+      });
+    }
+    if (insufficient.length) {
+      return res.status(400).json({
+        success: false,
+        message: "Insufficient stock for one or more prescription items",
+        insufficient,
+      });
+    }
 
     const ok = await requirePaidByReferenceOrRespond(res, {
       item_type: "prescription",
@@ -32,12 +101,45 @@ const recordDispensing = async (req, res) => {
 
     const staff = await getCurrentStaff(req);
     const finalPharmacistId = pharmacist_id ?? staff?.id ?? null;
+    const dispenseDate = dispense_date ?? new Date();
 
-    const record = await DispenseRecord.create({
-      prescription_id,
-      pharmacist_id: finalPharmacistId,
-      dispense_date: dispense_date ?? new Date(),
+    const record = await sequelize.transaction(async (t) => {
+      const dispenseRecord = await DispenseRecord.create(
+        {
+          prescription_id,
+          pharmacist_id: finalPharmacistId,
+          dispense_date: dispenseDate,
+        },
+        { transaction: t }
+      );
+
+      // Group by inventory_item_id so duplicate medications on the same prescription deduct once
+      const byInventoryItem = new Map();
+      for (const item of pres.items) {
+        const invId = item.medication.inventory_item_id;
+        const qty = item.quantity || 1;
+        byInventoryItem.set(invId, (byInventoryItem.get(invId) || 0) + qty);
+      }
+
+      for (const [inventoryItemId, totalQty] of byInventoryItem) {
+        await InventoryTransaction.create(
+          {
+            inventory_item_id: inventoryItemId,
+            transaction_type: "out",
+            quantity: totalQty,
+            transaction_date: dispenseDate,
+          },
+          { transaction: t }
+        );
+        await InventoryItem.decrement(
+          "quantity_available",
+          { by: totalQty, where: { id: inventoryItemId }, transaction: t }
+        );
+      }
+
+      return dispenseRecord;
     });
+
     return res.status(201).json({ success: true, data: record });
   } catch (error) {
     return res

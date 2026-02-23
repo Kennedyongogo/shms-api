@@ -622,6 +622,15 @@ const setupAssociations = () => {
       as: "item",
     });
 
+    Medication.belongsTo(InventoryItem, {
+      foreignKey: "inventory_item_id",
+      as: "inventoryItem",
+    });
+    InventoryItem.hasOne(Medication, {
+      foreignKey: "inventory_item_id",
+      as: "medication",
+    });
+
     // Supply chain
     Supplier.hasMany(PurchaseOrder, {
       foreignKey: "supplier_id",

@@ -80,11 +80,15 @@ const createPrescription = async (req, res) => {
             dosage: i.dosage ?? null,
             frequency: i.frequency ?? null,
             duration: i.duration ?? null,
+            quantity: Math.max(1, parseInt(i.quantity, 10) || 1),
           }));
 
         if (rows.length) {
           await PrescriptionItem.bulkCreate(rows, { transaction: t });
-          total = rows.reduce((sum, r) => sum + Number(priceById.get(String(r.medication_id)) || 0), 0);
+          total = rows.reduce(
+            (sum, r) => sum + (Number(priceById.get(String(r.medication_id)) || 0) * (r.quantity || 1)),
+            0
+          );
         }
       }
 
