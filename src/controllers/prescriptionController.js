@@ -1,5 +1,6 @@
 const { Prescription, PrescriptionItem, Medication, Consultation, Appointment, Staff, Bill, BillItem, Patient, User, sequelize } = require("../models");
 const { parsePagination } = require("../utils/crudControllerFactory");
+const { auditLog } = require("../utils/auditLog");
 
 const isAdmin = (req) => req.userType === "user" && req.role?.name === "admin";
 
@@ -122,6 +123,7 @@ const createPrescription = async (req, res) => {
     const reloaded = await Prescription.findByPk(prescription.id, {
       include: [{ model: PrescriptionItem, as: "items" }],
     });
+    await auditLog(req, { action: "CREATE_PRESCRIPTION", table_name: "Prescription", record_id: prescription?.id });
     return res.status(201).json({ success: true, data: reloaded });
   } catch (error) {
     return res.status(500).json({ success: false, message: "Error creating prescription", error: error.message });
@@ -131,10 +133,11 @@ const createPrescription = async (req, res) => {
 const listPrescriptions = async (req, res) => {
   try {
     const { page, limit, offset } = parsePagination(req.query);
-    const { patient_id, doctor_id } = req.query;
+    const { patient_id, doctor_id, consultation_id } = req.query;
     const where = {};
     if (patient_id) where.patient_id = patient_id;
     if (doctor_id) where.doctor_id = doctor_id;
+    if (consultation_id) where.consultation_id = consultation_id;
 
     const { count, rows } = await Prescription.findAndCountAll({
       where,
@@ -155,6 +158,12 @@ const listPrescriptions = async (req, res) => {
           attributes: ["id", "staff_type", "user_id"],
           required: false,
           include: [{ model: User, as: "user", attributes: ["id", "full_name", "email", "phone"], required: false }],
+        },
+        {
+          model: PrescriptionItem,
+          as: "items",
+          required: false,
+          include: [{ model: Medication, as: "medication", attributes: ["id", "name", "unit_price"], required: false }],
         },
         {
           model: Consultation,

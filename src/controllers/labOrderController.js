@@ -15,6 +15,7 @@ const {
 const { parsePagination } = require("../utils/crudControllerFactory");
 const { sequelize } = require("../config/database");
 const { requirePaidByReferenceOrRespond } = require("../utils/paymentGate");
+const { auditLog } = require("../utils/auditLog");
 
 const isAdmin = (req) => req.userType === "user" && req.role?.name === "admin";
 
@@ -184,6 +185,7 @@ const createLabOrder = async (req, res) => {
     const reloaded = await LabOrder.findByPk(created.id, {
       include: [{ model: LabOrderItem, as: "items" }],
     });
+    await auditLog(req, { action: "CREATE_LABORDER", table_name: "LabOrder", record_id: created?.id });
     return res.status(201).json({ success: true, data: reloaded });
   } catch (error) {
     return res
@@ -271,6 +273,7 @@ const updateStatus = async (req, res) => {
     }
 
     const updated = await order.update({ status });
+    await auditLog(req, { action: "UPDATE_LABORDER_STATUS", table_name: "LabOrder", record_id: id });
     return res.status(200).json({ success: true, data: updated });
   } catch (error) {
     return res
@@ -308,7 +311,20 @@ const getById = async (req, res) => {
           required: false,
           include: [
             { model: LabTest, as: "labTest", required: false },
-            { model: LabResult, as: "result", required: false },
+            {
+              model: LabResult,
+              as: "result",
+              required: false,
+              include: [
+                {
+                  model: Staff,
+                  as: "labTechnician",
+                  required: false,
+                  attributes: ["id", "staff_type"],
+                  include: [{ model: User, as: "user", attributes: ["id", "full_name"], required: false }],
+                },
+              ],
+            },
           ],
         },
       ],
@@ -384,7 +400,20 @@ const list = async (req, res) => {
           required: false,
           include: [
             { model: LabTest, as: "labTest", required: false },
-            { model: LabResult, as: "result", required: false },
+            {
+              model: LabResult,
+              as: "result",
+              required: false,
+              include: [
+                {
+                  model: Staff,
+                  as: "labTechnician",
+                  required: false,
+                  attributes: ["id", "staff_type"],
+                  include: [{ model: User, as: "user", attributes: ["id", "full_name"], required: false }],
+                },
+              ],
+            },
           ],
         },
       ],
@@ -447,6 +476,7 @@ const remove = async (req, res) => {
       });
       await LabOrder.destroy({ where: { id }, transaction: t });
     });
+    await auditLog(req, { action: "DELETE_LABORDER", table_name: "LabOrder", record_id: id });
     return res
       .status(200)
       .json({ success: true, message: "Lab order deleted" });

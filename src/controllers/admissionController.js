@@ -13,6 +13,7 @@ const {
 } = require("../models");
 const { sequelize } = require("../config/database");
 const { parsePagination } = require("../utils/crudControllerFactory");
+const { auditLog } = require("../utils/auditLog");
 const { requirePaidByReferenceOrRespond } = require("../utils/paymentGate");
 
 const isAdmin = (req) => req.userType === "user" && req.role?.name === "admin";
@@ -162,6 +163,7 @@ const admitPatient = async (req, res) => {
       return admission;
     });
 
+    await auditLog(req, { action: "ADMIT_PATIENT", table_name: "Admission", record_id: result?.id });
     return res.status(201).json({ success: true, data: result });
   } catch (error) {
     return res.status(500).json({ success: false, message: "Error admitting patient", error: error.message });
@@ -206,6 +208,7 @@ const generateAdmissionBilling = async (req, res) => {
     const total = items.reduce((sum, i) => sum + Number(i.amount || 0), 0);
     await Bill.update({ total_amount: total }, { where: { id: billItem.bill_id } });
 
+    await auditLog(req, { action: "GENERATE_ADMISSION_BILLING", table_name: "Admission", record_id: id });
     return res.status(200).json({
       success: true,
       message: "Billing generated. Patient must pay before discharge.",
@@ -272,6 +275,7 @@ const dischargePatient = async (req, res) => {
       return updatedAdmission;
     });
 
+    await auditLog(req, { action: "DISCHARGE_PATIENT", table_name: "Admission", record_id: id });
     return res.status(200).json({ success: true, data: updated });
   } catch (error) {
     return res.status(500).json({ success: false, message: "Error discharging patient", error: error.message });

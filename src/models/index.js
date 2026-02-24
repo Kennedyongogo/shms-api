@@ -39,6 +39,7 @@ const InventoryItem = require("./inventoryItem")(sequelize);
 const InventoryTransaction = require("./inventoryTransaction")(sequelize);
 const Supplier = require("./supplier")(sequelize);
 const PurchaseOrder = require("./purchaseOrder")(sequelize);
+const PurchaseOrderItem = require("./purchaseOrderItem")(sequelize);
 
 const Bill = require("./bill")(sequelize);
 const BillItem = require("./billItem")(sequelize);
@@ -92,6 +93,7 @@ const models = {
   InventoryTransaction,
   Supplier,
   PurchaseOrder,
+  PurchaseOrderItem,
   Bill,
   BillItem,
   Payment,
@@ -164,6 +166,7 @@ const initializeModels = async () => {
     await InventoryTransaction.sync({ force: false, alter: false });
     await Supplier.sync({ force: false, alter: false });
     await PurchaseOrder.sync({ force: false, alter: false });
+    await PurchaseOrderItem.sync({ force: false, alter: false });
 
     // 10) BILLING & FINANCE
     await Bill.sync({ force: false, alter: false });
@@ -639,6 +642,24 @@ const setupAssociations = () => {
     PurchaseOrder.belongsTo(Supplier, {
       foreignKey: "supplier_id",
       as: "supplier",
+    });
+
+    PurchaseOrder.hasMany(PurchaseOrderItem, {
+      foreignKey: "purchase_order_id",
+      as: "items",
+      onDelete: "CASCADE",
+    });
+    PurchaseOrderItem.belongsTo(PurchaseOrder, {
+      foreignKey: "purchase_order_id",
+      as: "purchaseOrder",
+    });
+    PurchaseOrderItem.belongsTo(InventoryItem, {
+      foreignKey: "inventory_item_id",
+      as: "inventoryItem",
+    });
+    InventoryItem.hasMany(PurchaseOrderItem, {
+      foreignKey: "inventory_item_id",
+      as: "purchaseOrderItems",
     });
 
     // Billing

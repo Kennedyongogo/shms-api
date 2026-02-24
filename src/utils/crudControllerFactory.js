@@ -1,4 +1,5 @@
 const { Op } = require("sequelize");
+const { auditLog } = require("./auditLog");
 
 const parsePagination = (query) => {
   const page = Math.max(parseInt(query.page ?? "1", 10) || 1, 1);
@@ -25,10 +26,12 @@ const createCrudController = ({
   include,
   defaultOrder = [["createdAt", "DESC"]],
 }) => {
+  const tableName = name;
   const create = async (req, res) => {
     try {
       const payload = buildCreateData ? await buildCreateData(req) : req.body;
       const created = await Model.create(payload);
+      await auditLog(req, { action: `CREATE_${tableName.toUpperCase()}`, table_name: tableName, record_id: created?.id });
       return res.status(201).json({ success: true, data: created });
     } catch (error) {
       return res.status(500).json({
@@ -90,6 +93,7 @@ const createCrudController = ({
 
       const payload = buildUpdateData ? await buildUpdateData(req, record) : req.body;
       const updated = await record.update(payload);
+      await auditLog(req, { action: `UPDATE_${tableName.toUpperCase()}`, table_name: tableName, record_id: id });
       return res.status(200).json({ success: true, data: updated });
     } catch (error) {
       return res.status(500).json({
@@ -106,6 +110,7 @@ const createCrudController = ({
       const record = await Model.findByPk(id);
       if (!record) return res.status(404).json({ success: false, message: `${name} not found` });
       await record.destroy();
+      await auditLog(req, { action: `DELETE_${tableName.toUpperCase()}`, table_name: tableName, record_id: id });
       return res.status(200).json({ success: true, message: `${name} deleted` });
     } catch (error) {
       return res.status(500).json({

@@ -1,5 +1,6 @@
 const { NursingNote, Admission, Staff } = require("../models");
 const { createCrudController } = require("../utils/crudControllerFactory");
+const { auditLog } = require("../utils/auditLog");
 
 async function getCurrentStaff(req) {
   if (!req.userId) return null;
@@ -56,6 +57,7 @@ const recordNursingNote = async (req, res) => {
       respiratory_rate: respiratory_rate != null ? parseInt(respiratory_rate, 10) : null,
       pain_scale: pain_scale != null ? parseInt(pain_scale, 10) : null,
     });
+    await auditLog(req, { action: "RECORD_NURSING_NOTE", table_name: "NursingNote", record_id: created?.id });
     return res.status(201).json({ success: true, data: created });
   } catch (error) {
     return res.status(500).json({ success: false, message: "Error recording nursing note", error: error.message });

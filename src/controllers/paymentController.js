@@ -1,6 +1,7 @@
 const { Op } = require("sequelize");
 const { Payment, Bill, Appointment, BillItem, Patient, User } = require("../models");
 const { parsePagination } = require("../utils/crudControllerFactory");
+const { auditLog } = require("../utils/auditLog");
 
 /** When a bill becomes paid, confirm any appointment(s) it paid for. */
 async function confirmAppointmentIfBillPaid(bill) {
@@ -67,6 +68,7 @@ const processPayment = async (req, res) => {
 
     await bill.update({ status });
     await confirmAppointmentIfBillPaid(await bill.reload());
+    await auditLog(req, { action: "PROCESS_PAYMENT", table_name: "Payment", record_id: payment?.id });
     return res.status(201).json({ success: true, data: { payment, bill } });
   } catch (error) {
     return res.status(500).json({ success: false, message: "Error processing payment", error: error.message });

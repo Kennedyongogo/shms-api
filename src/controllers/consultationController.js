@@ -2,6 +2,7 @@ const { Op } = require("sequelize");
 const { Consultation, Appointment, Patient, Staff, User } = require("../models");
 const { createCrudController, parsePagination } = require("../utils/crudControllerFactory");
 const { requirePaidByReferenceOrRespond } = require("../utils/paymentGate");
+const { auditLog } = require("../utils/auditLog");
 
 const crud = createCrudController({
   Model: Consultation,
@@ -79,6 +80,7 @@ const recordConsultation = async (req, res) => {
       diagnosis: diagnosis ?? null,
       notes: notes ?? null,
     });
+    await auditLog(req, { action: "RECORD_CONSULTATION", table_name: "Consultation", record_id: consultation?.id });
     return res.status(201).json({ success: true, data: consultation });
   } catch (error) {
     return res.status(500).json({ success: false, message: "Error recording consultation", error: error.message });
@@ -103,6 +105,7 @@ const create = async (req, res) => {
       diagnosis: diagnosis ?? null,
       notes: notes ?? null,
     });
+    await auditLog(req, { action: "CREATE_CONSULTATION", table_name: "Consultation", record_id: consultation?.id });
     return res.status(201).json({ success: true, data: consultation });
   } catch (error) {
     return res.status(500).json({ success: false, message: "Error creating consultation", error: error.message });
@@ -135,6 +138,7 @@ const updateDiagnosis = async (req, res) => {
       notes: notes ?? consultation.notes,
       symptoms: symptoms ?? consultation.symptoms,
     });
+    await auditLog(req, { action: "UPDATE_CONSULTATION", table_name: "Consultation", record_id: id });
     return res.status(200).json({ success: true, data: updated });
   } catch (error) {
     return res.status(500).json({ success: false, message: "Error updating diagnosis", error: error.message });

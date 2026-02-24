@@ -4,6 +4,7 @@ const { Op } = require("sequelize");
 const { User, Role, Staff } = require("../models");
 const { parsePagination } = require("../utils/crudControllerFactory");
 const { deleteFile, toRelativeUploadPath } = require("../middleware/upload");
+const { auditLog } = require("../utils/auditLog");
 
 const normalizeKenyanPhone = (input) => {
   if (input == null) return null;
@@ -95,6 +96,7 @@ const create = async (req, res) => {
       last_login: null,
     });
 
+    await auditLog(req, { action: "CREATE_USER", table_name: "User", record_id: created?.id });
     return res.status(201).json({ success: true, data: sanitizeUser(created) });
   } catch (error) {
     return res.status(500).json({
@@ -209,6 +211,7 @@ const update = async (req, res) => {
     }
 
     const updated = await user.update(updates);
+    await auditLog(req, { action: "UPDATE_USER", table_name: "User", record_id: id });
     return res.status(200).json({ success: true, data: sanitizeUser(updated) });
   } catch (error) {
     return res.status(500).json({
@@ -229,6 +232,7 @@ const remove = async (req, res) => {
         .json({ success: false, message: "User not found" });
     }
     await user.destroy();
+    await auditLog(req, { action: "DELETE_USER", table_name: "User", record_id: id });
     return res.status(200).json({ success: true, message: "User deleted" });
   } catch (error) {
     return res.status(500).json({
@@ -249,6 +253,7 @@ const deactivate = async (req, res) => {
         .json({ success: false, message: "User not found" });
     }
     const updated = await user.update({ status: "inactive" });
+    await auditLog(req, { action: "DEACTIVATE_USER", table_name: "User", record_id: id });
     return res.status(200).json({ success: true, data: sanitizeUser(updated) });
   } catch (error) {
     return res.status(500).json({
@@ -285,6 +290,7 @@ const updateProfileImage = async (req, res) => {
 
     const relative = toRelativeUploadPath(req.file.path);
     const updated = await user.update({ profile_image_path: relative });
+    await auditLog(req, { action: "UPDATE_USER_PROFILE_IMAGE", table_name: "User", record_id: id });
     return res.status(200).json({ success: true, data: sanitizeUser(updated) });
   } catch (error) {
     return res.status(500).json({

@@ -2,6 +2,7 @@ const { Op } = require("sequelize");
 const bcrypt = require("bcryptjs");
 const { Patient, User, Hospital } = require("../models");
 const { createCrudController, parsePagination } = require("../utils/crudControllerFactory");
+const { auditLog } = require("../utils/auditLog");
 
 const sanitizePatient = (p) => {
   if (!p) return p;
@@ -125,6 +126,7 @@ const create = async (req, res) => {
     delete body.confirm_password;
 
     const created = await Patient.create(body);
+    await auditLog(req, { action: "CREATE_PATIENT", table_name: "Patient", record_id: created?.id });
     return res.status(201).json({ success: true, data: sanitizePatient(created) });
   } catch (error) {
     return res.status(500).json({ success: false, message: "Error creating Patient", error: error.message });
@@ -184,6 +186,7 @@ const update = async (req, res) => {
     }
 
     const updated = await record.update(updates);
+    await auditLog(req, { action: "UPDATE_PATIENT", table_name: "Patient", record_id: id });
     return res.status(200).json({ success: true, data: sanitizePatient(updated) });
   } catch (error) {
     return res.status(500).json({ success: false, message: "Error updating Patient", error: error.message });

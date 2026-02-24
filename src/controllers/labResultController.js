@@ -2,6 +2,7 @@ const { Op } = require("sequelize");
 const { LabResult, LabOrderItem, LabTest, LabOrder, Patient, User, Staff } = require("../models");
 const { parsePagination } = require("../utils/crudControllerFactory");
 const { requirePaidByReferenceOrRespond } = require("../utils/paymentGate");
+const { auditLog } = require("../utils/auditLog");
 
 const include = [
   {
@@ -99,6 +100,7 @@ const enterResults = async (req, res) => {
         lab_technician_id: techId ?? existing.lab_technician_id,
         result_date: result_date ?? existing.result_date,
       });
+      await auditLog(req, { action: "UPDATE_LABRESULT", table_name: "LabResult", record_id: existing?.id });
       return res.status(200).json({ success: true, data: updated });
     }
 
@@ -110,6 +112,7 @@ const enterResults = async (req, res) => {
       lab_technician_id: techId ?? null,
       result_date: result_date ?? new Date(),
     });
+    await auditLog(req, { action: "CREATE_LABRESULT", table_name: "LabResult", record_id: created?.id });
     return res.status(201).json({ success: true, data: created });
   } catch (error) {
     return res.status(500).json({ success: false, message: "Error entering lab results", error: error.message });

@@ -1,8 +1,9 @@
 const express = require("express");
-const { stockInOut } = require("../controllers/inventoryTransactionController");
+const { getAll, stockInOut } = require("../controllers/inventoryTransactionController");
 
 const router = express.Router();
 
+router.get("/", getAll);
 router.post("/", stockInOut);
 
 module.exports = router;

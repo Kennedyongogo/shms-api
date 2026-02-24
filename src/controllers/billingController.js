@@ -3,6 +3,7 @@ const { Bill, BillItem, Consultation, Payment, Patient, User, Appointment, Servi
 const { getBillingStatusByReference } = require("../utils/paymentGate");
 const { confirmAppointmentIfBillPaid } = require("./paymentController");
 const { parsePagination } = require("../utils/crudControllerFactory");
+const { auditLog } = require("../utils/auditLog");
 
 const generateBill = async (req, res) => {
   try {
@@ -26,6 +27,7 @@ const generateBill = async (req, res) => {
       total_amount: 0,
       status: "unpaid",
     });
+    await auditLog(req, { action: "GENERATE_BILL", table_name: "Bill", record_id: bill?.id });
     return res.status(201).json({ success: true, data: bill });
   } catch (error) {
     return res
@@ -66,6 +68,7 @@ const addBillItems = async (req, res) => {
     const total = allItems.reduce((sum, i) => sum + Number(i.amount || 0), 0);
     await bill.update({ total_amount: total });
 
+    await auditLog(req, { action: "ADD_BILL_ITEMS", table_name: "Bill", record_id: bill_id });
     return res
       .status(200)
       .json({ success: true, data: { bill, items: allItems } });
@@ -92,7 +95,15 @@ const getByReference = async (req, res) => {
         .status(400)
         .json({ success: false, message: status.message || "Invalid request" });
     }
-    return res.status(200).json({ success: true, data: status });
+    const data = { ...status };
+    if (status.bill_id) {
+      const items = await BillItem.findAll({
+        where: { bill_id: status.bill_id },
+        order: [["createdAt", "ASC"]],
+      });
+      data.items = items;
+    }
+    return res.status(200).json({ success: true, data });
   } catch (error) {
     return res
       .status(500)
@@ -124,6 +135,7 @@ const setBillStatus = async (req, res) => {
 
     await bill.update({ status });
     await confirmAppointmentIfBillPaid(await bill.reload());
+    await auditLog(req, { action: "SET_BILL_STATUS", table_name: "Bill", record_id: bill_id });
     return res.status(200).json({ success: true, data: bill });
   } catch (error) {
     return res

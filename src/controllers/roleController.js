@@ -1,5 +1,6 @@
 const { Role, Permission, User } = require("../models");
 const { createCrudController } = require("../utils/crudControllerFactory");
+const { auditLog } = require("../utils/auditLog");
 
 const crud = createCrudController({
   Model: Role,
@@ -25,6 +26,7 @@ const assignPermissions = async (req, res) => {
     const permissions = await Permission.findAll({ where: { id: permission_ids } });
     await role.setPermissions(permissions);
 
+    await auditLog(req, { action: "ASSIGN_PERMISSIONS", table_name: "Role", record_id: id });
     const reloaded = await Role.findByPk(id, { include: [{ model: Permission, as: "permissions" }] });
     return res.status(200).json({ success: true, data: reloaded });
   } catch (error) {
@@ -52,6 +54,7 @@ const remove = async (req, res) => {
     }
 
     await role.destroy();
+    await auditLog(req, { action: "DELETE_ROLE", table_name: "Role", record_id: id });
     return res.status(200).json({ success: true, message: "Role deleted" });
   } catch (error) {
     return res.status(500).json({

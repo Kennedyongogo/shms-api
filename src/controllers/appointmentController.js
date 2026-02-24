@@ -24,6 +24,7 @@ const {
 } = require("../models");
 const { parsePagination } = require("../utils/crudControllerFactory");
 const { requirePaidByReferenceOrRespond } = require("../utils/paymentGate");
+const { auditLog } = require("../utils/auditLog");
 
 const bookAppointment = async (req, res) => {
   try {
@@ -82,6 +83,7 @@ const bookAppointment = async (req, res) => {
       });
     }
 
+    await auditLog(req, { action: "BOOK_APPOINTMENT", table_name: "Appointment", record_id: appt?.id });
     return res.status(201).json({ success: true, data: appt });
   } catch (error) {
     return res
@@ -112,6 +114,7 @@ const updateStatus = async (req, res, status) => {
   }
 
   const updated = await appt.update({ status });
+  await auditLog(req, { action: "UPDATE_APPOINTMENT_STATUS", table_name: "Appointment", record_id: id });
   return res.status(200).json({ success: true, data: updated });
 };
 
@@ -585,6 +588,7 @@ const remove = async (req, res) => {
       await appt.destroy(tx);
     });
 
+    await auditLog(req, { action: "CANCEL_APPOINTMENT", table_name: "Appointment", record_id: appointmentId });
     return res
       .status(200)
       .json({ success: true, message: "Appointment deleted", deleted });

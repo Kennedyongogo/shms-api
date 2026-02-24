@@ -2,6 +2,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { User, Role } = require("../models");
 const config = require("../config/config");
+const { auditLog } = require("../utils/auditLog");
 
 const normalizeKenyanPhone = (input) => {
   if (input == null) return null;
@@ -80,6 +81,7 @@ const register = async (req, res) => {
 
     const token = jwt.sign({ id: user.id, type: "user" }, config.jwtSecret, { expiresIn: "7d" });
     const role = await Role.findByPk(resolvedRoleId);
+    await auditLog({ user: { id: user.id } }, { action: "REGISTER", table_name: "User", record_id: user.id });
 
     return res.status(201).json({
       success: true,
@@ -110,6 +112,7 @@ const login = async (req, res) => {
     await user.update({ last_login: new Date() });
     const token = jwt.sign({ id: user.id, type: "user" }, config.jwtSecret, { expiresIn: "7d" });
     const role = await Role.findByPk(user.role_id);
+    await auditLog({ user: { id: user.id } }, { action: "LOGIN", table_name: "auth" });
     return res.status(200).json({ success: true, data: { user: sanitizeUser(user), role, token } });
   } catch (error) {
     return res.status(500).json({ success: false, message: "Error logging in", error: error.message });
@@ -117,6 +120,7 @@ const login = async (req, res) => {
 };
 
 const logout = async (req, res) => {
+  await auditLog(req, { action: "LOGOUT", table_name: "auth" });
   return res.status(200).json({ success: true, message: "Logged out" });
 };
 
@@ -136,6 +140,7 @@ const bootstrapPromoteMe = async (req, res) => {
 
     await user.update({ role_id: adminRoleId });
     const role = await Role.findByPk(adminRoleId);
+    await auditLog({ user: { id: userId } }, { action: "BOOTSTRAP_PROMOTE_ADMIN", table_name: "User", record_id: userId });
 
     return res.status(200).json({
       success: true,
@@ -159,6 +164,7 @@ const resetPassword = async (req, res) => {
 
     const hashed = await bcrypt.hash(new_password, 10);
     await user.update({ password: hashed });
+    await auditLog({ user: { id: user.id } }, { action: "RESET_PASSWORD", table_name: "User", record_id: user.id });
     return res.status(200).json({ success: true, message: "Password reset successful" });
   } catch (error) {
     return res.status(500).json({ success: false, message: "Error resetting password", error: error.message });

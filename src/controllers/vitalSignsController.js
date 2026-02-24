@@ -1,4 +1,5 @@
 const { VitalSigns, Consultation } = require("../models");
+const { auditLog } = require("../utils/auditLog");
 
 const recordVitals = async (req, res) => {
   try {
@@ -13,6 +14,7 @@ const recordVitals = async (req, res) => {
     const existing = await VitalSigns.findOne({ where: { consultation_id } });
     if (existing) {
       const updated = await existing.update({ temperature, blood_pressure, pulse, weight, height });
+      await auditLog(req, { action: "UPDATE_VITALSIGNS", table_name: "VitalSigns", record_id: existing?.id });
       return res.status(200).json({ success: true, data: updated });
     }
 
@@ -24,6 +26,7 @@ const recordVitals = async (req, res) => {
       weight: weight ?? null,
       height: height ?? null,
     });
+    await auditLog(req, { action: "CREATE_VITALSIGNS", table_name: "VitalSigns", record_id: vitals?.id });
     return res.status(201).json({ success: true, data: vitals });
   } catch (error) {
     return res.status(500).json({ success: false, message: "Error recording vital signs", error: error.message });

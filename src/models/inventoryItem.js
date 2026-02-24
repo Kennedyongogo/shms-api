@@ -21,6 +21,13 @@ module.exports = (sequelize) => {
         type: DataTypes.INTEGER,
         allowNull: false,
         defaultValue: 0,
+        comment: "Stock in main store / general inventory.",
+      },
+      quantity_in_pharmacy: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0,
+        comment: "Stock transferred to pharmacy for dispensing.",
       },
       reorder_level: {
         type: DataTypes.INTEGER,

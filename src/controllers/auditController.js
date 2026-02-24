@@ -1,4 +1,4 @@
-const { AuditLog } = require("../models");
+const { AuditLog, User } = require("../models");
 const { parsePagination } = require("../utils/crudControllerFactory");
 
 const viewLogs = async (req, res) => {
@@ -15,6 +15,7 @@ const viewLogs = async (req, res) => {
       limit,
       offset,
       order: [["timestamp", "DESC"]],
+      include: [{ model: User, as: "user", attributes: ["id", "full_name", "email"], required: false }],
     });
     return res.status(200).json({
       success: true,

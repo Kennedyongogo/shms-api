@@ -48,6 +48,7 @@ const insuranceRoutes = require("./routes/insuranceRoutes");
 
 const admissionRoutes = require("./routes/admissionRoutes");
 const nursingRoutes = require("./routes/nursingRoutes");
+const medicalReportRoutes = require("./routes/medicalReportRoutes");
 
 const serviceRoutes = require("./routes/serviceRoutes");
 
@@ -58,6 +59,7 @@ const eventRegistrationRoutes = require("./routes/eventRegistrationRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
 const reportRoutes = require("./routes/reportRoutes");
 const auditRoutes = require("./routes/auditRoutes");
+const statisticsRoutes = require("./routes/statisticsRoutes");
 const settingsRoutes = require("./routes/settingsRoutes");
 
 const app = express();
@@ -116,6 +118,7 @@ app.use("/api/insurance-claims", authenticateUser, insuranceRoutes);
 
 app.use("/api/admissions", authenticateUser, admissionRoutes);
 app.use("/api/nursing-notes", authenticateUser, nursingRoutes);
+app.use("/api/medical-reports", authenticateUser, medicalReportRoutes);
 
 app.use("/api/services", serviceRoutes);
 
@@ -126,6 +129,7 @@ app.use("/api/event-registrations", eventRegistrationRoutes);
 app.use("/api/notifications", authenticateUser, notificationRoutes);
 app.use("/api/reports", authenticateUser, reportRoutes);
 app.use("/api/audit-logs", authenticateUser, auditRoutes);
+app.use("/api/statistics", authenticateUser, statisticsRoutes);
 app.use("/api/settings", authenticateUser, requireRoles(["admin"]), settingsRoutes);
 
 console.log("✅ All API routes registered");

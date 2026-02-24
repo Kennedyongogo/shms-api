@@ -1,4 +1,34 @@
 const { InventoryTransaction, InventoryItem } = require("../models");
+const { parsePagination } = require("../utils/crudControllerFactory");
+const { auditLog } = require("../utils/auditLog");
+
+const getAll = async (req, res) => {
+  try {
+    const { page, limit, offset } = parsePagination(req.query);
+    const { transaction_type, inventory_item_id } = req.query;
+    const where = {};
+    if (transaction_type && String(transaction_type).trim()) where.transaction_type = String(transaction_type).trim();
+    if (inventory_item_id && String(inventory_item_id).trim()) where.inventory_item_id = String(inventory_item_id).trim();
+    const { count, rows } = await InventoryTransaction.findAndCountAll({
+      where,
+      limit,
+      offset,
+      include: [{ model: InventoryItem, as: "item", attributes: ["id", "name", "unit", "pack_size"] }],
+      order: [["transaction_date", "DESC"]],
+    });
+    return res.status(200).json({
+      success: true,
+      data: rows,
+      pagination: { total: count, page, limit, totalPages: Math.ceil(count / limit) },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching inventory transactions",
+      error: error.message,
+    });
+  }
+};
 
 const stockInOut = async (req, res) => {
   try {
@@ -39,6 +69,7 @@ const stockInOut = async (req, res) => {
 
     await item.update({ quantity_available: item.quantity_available + delta });
 
+    await auditLog(req, { action: "STOCK_IN_OUT", table_name: "InventoryTransaction", record_id: tx?.id });
     return res.status(201).json({
       success: true,
       data: { ...tx.toJSON(), effective_quantity: effectiveQuantity },
@@ -48,5 +79,5 @@ const stockInOut = async (req, res) => {
   }
 };
 
-module.exports = { stockInOut };
+module.exports = { getAll, stockInOut };
 
