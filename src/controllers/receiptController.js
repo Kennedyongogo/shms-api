@@ -224,12 +224,15 @@ async function getReceiptPdf(req, res) {
 
     doc.fontSize(10).font("Helvetica-Bold").text("Items", { continued: false });
     doc.font("Helvetica");
-    const tableTop = doc.y + 6;
-    doc.fontSize(9).text("Description", 50, tableTop);
-    doc.text("Amount", pageWidth - 120, tableTop);
-    doc.moveTo(50, tableTop + 2).lineTo(pageWidth - 50, tableTop + 2).stroke();
-    doc.moveDown(0.3);
-    let rowY = doc.y;
+    // Draw separator line above column headers, then headers, then line below headers
+    const lineAboveY = doc.y + 8;
+    doc.moveTo(50, lineAboveY).lineTo(pageWidth - 50, lineAboveY).stroke();
+    const tableHeaderY = lineAboveY + 10;
+    doc.fontSize(9).text("Description", 50, tableHeaderY);
+    doc.text("Amount", pageWidth - 120, tableHeaderY);
+    const lineBelowY = tableHeaderY + 10;
+    doc.moveTo(50, lineBelowY).lineTo(pageWidth - 50, lineBelowY).stroke();
+    let rowY = lineBelowY + 8;
     for (const item of receipt.items || []) {
       const desc = item.details ? `${item.description} (${item.details.doctor || item.details.ward || item.details.prescriptionDate || ""})` : item.description;
       doc.text(desc.substring(0, 50) + (desc.length > 50 ? "…" : ""), 50, rowY);
