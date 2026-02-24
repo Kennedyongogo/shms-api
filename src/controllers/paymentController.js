@@ -1,7 +1,8 @@
 const { Op } = require("sequelize");
-const { Payment, Bill, Appointment, BillItem, Patient, User } = require("../models");
+const { Payment, Bill, Appointment, BillItem, Patient, User, sequelize } = require("../models");
 const { parsePagination } = require("../utils/crudControllerFactory");
 const { auditLog } = require("../utils/auditLog");
+const { getReceiptData } = require("./receiptController");
 
 /** When a bill becomes paid, confirm any appointment(s) it paid for. */
 async function confirmAppointmentIfBillPaid(bill) {
@@ -58,6 +59,15 @@ const processPayment = async (req, res) => {
       payment_date: payment_date ?? new Date(),
     });
 
+    // Generate receipt number: REC-YYYYMMDD-NNNN (daily sequence)
+    const createdAt = payment.createdAt || new Date();
+    const dateStr = createdAt.toISOString().slice(0, 10).replace(/-/g, "");
+    const sameDayCount = await Payment.count({
+      where: sequelize.where(sequelize.fn("date", sequelize.col("created_at")), createdAt.toISOString().slice(0, 10)),
+    });
+    const receiptNumber = `REC-${dateStr}-${String(sameDayCount).padStart(4, "0")}`;
+    await payment.update({ receipt_number: receiptNumber });
+
     const payments = await Payment.findAll({ where: { bill_id } });
     const paid = payments.reduce((sum, p) => sum + Number(p.amount_paid || 0), 0);
 
@@ -69,7 +79,10 @@ const processPayment = async (req, res) => {
     await bill.update({ status });
     await confirmAppointmentIfBillPaid(await bill.reload());
     await auditLog(req, { action: "PROCESS_PAYMENT", table_name: "Payment", record_id: payment?.id });
-    return res.status(201).json({ success: true, data: { payment, bill } });
+
+    // Generate receipt data so frontend can show/print receipt immediately after payment
+    const receipt = await getReceiptData(payment.id);
+    return res.status(201).json({ success: true, data: { payment, bill, receipt } });
   } catch (error) {
     return res.status(500).json({ success: false, message: "Error processing payment", error: error.message });
   }

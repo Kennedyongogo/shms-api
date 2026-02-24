@@ -28,11 +28,16 @@ module.exports = (sequelize) => {
         allowNull: false,
         defaultValue: DataTypes.NOW,
       },
+      receipt_number: {
+        type: DataTypes.STRING(50),
+        allowNull: true,
+        comment: "Human-readable receipt id e.g. REC-YYYYMMDD-NNNN, set when payment is created",
+      },
     },
     {
       tableName: "payments",
       timestamps: true,
-      indexes: [{ fields: ["bill_id"] }, { fields: ["payment_date"] }],
+      indexes: [{ fields: ["bill_id"] }, { fields: ["payment_date"] }, { fields: ["receipt_number"] }],
     }
   );
 
