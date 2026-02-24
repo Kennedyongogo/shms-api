@@ -2,6 +2,7 @@ const { Op } = require("sequelize");
 const {
   Hospital,
   Department,
+  Service,
   Ward,
   Bed,
   Staff,
@@ -51,6 +52,7 @@ const getAll = async (req, res) => {
     const [
       hospitalCount,
       departmentCount,
+      serviceCount,
       wardCount,
       bedCount,
       staffCount,
@@ -93,6 +95,7 @@ const getAll = async (req, res) => {
     ] = await Promise.all([
       Hospital.count(),
       Department.count(),
+      Service.count(),
       Ward.count(),
       Bed.count(),
       Staff.count(),
@@ -168,6 +171,7 @@ const getAll = async (req, res) => {
       overview: {
         totalHospitals: hospitalCount,
         totalDepartments: departmentCount,
+        totalServices: serviceCount,
         totalStaff: staffCount,
         totalPatients: patientCount,
         totalAppointments: appointmentCount,
@@ -175,6 +179,12 @@ const getAll = async (req, res) => {
         totalRevenue: totalRevenueResult,
         activeAdmissions: admissionAdmitted,
         totalBeds: bedCount,
+      },
+      departments: {
+        total: departmentCount,
+      },
+      services: {
+        total: serviceCount,
       },
       appointments: {
         total: appointmentCount,
@@ -255,4 +265,155 @@ const getAll = async (req, res) => {
   }
 };
 
-module.exports = { getAll };
+/**
+ * GET /api/statistics/appointments/chart
+ * Query: year (optional, default current), month (optional 1-12), groupBy (optional: 'month' | 'day')
+ * Returns bar data for the appointments chart:
+ * - If month is provided: one bar per day in that month (groupBy 'day' or default).
+ * - If only year: one bar per month Jan–Dec (groupBy 'month' or default).
+ */
+const getAppointmentsChart = async (req, res) => {
+  try {
+    const now = new Date();
+    const year = Math.min(9999, Math.max(1, parseInt(req.query.year, 10) || now.getFullYear()));
+    const monthParam = req.query.month;
+    const month = monthParam != null ? Math.min(12, Math.max(1, parseInt(monthParam, 10))) : null;
+    const groupBy = (req.query.groupBy || (month ? "day" : "month")).toLowerCase();
+
+    let bars;
+
+    if (groupBy === "day" && month != null) {
+      const daysInMonth = new Date(year, month, 0).getDate();
+      const dayCounts = await Promise.all(
+        Array.from({ length: daysInMonth }, (_, i) => {
+          const day = i + 1;
+          const start = new Date(year, month - 1, day, 0, 0, 0, 0);
+          const end = new Date(year, month - 1, day, 23, 59, 59, 999);
+          return Appointment.count({
+            where: {
+              appointment_date: {
+                [Op.gte]: start,
+                [Op.lte]: end,
+              },
+            },
+          }).then((count) => ({ name: String(day), count }));
+        })
+      );
+      bars = dayCounts;
+    } else {
+      const monthCounts = await Promise.all(
+        Array.from({ length: 12 }, (_, i) => {
+          const m = i + 1;
+          const start = new Date(year, i, 1, 0, 0, 0, 0);
+          const end = new Date(year, i + 1, 0, 23, 59, 59, 999);
+          const monthNames = [
+            "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+          ];
+          return Appointment.count({
+            where: {
+              appointment_date: {
+                [Op.gte]: start,
+                [Op.lte]: end,
+              },
+            },
+          }).then((count) => ({ name: monthNames[i], count }));
+        })
+      );
+      bars = monthCounts;
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        bars,
+        year,
+        month: month ?? null,
+        groupBy: groupBy === "day" ? "day" : "month",
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching appointments chart data",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * GET /api/statistics/revenue/chart
+ * Query: year (optional, default current), month (optional 1-12), groupBy (optional: 'month' | 'day')
+ * Returns bar data for revenue (sum of payments) by period:
+ * - If month is provided: one bar per day in that month.
+ * - If only year: one bar per month Jan–Dec.
+ */
+const getRevenueChart = async (req, res) => {
+  try {
+    const now = new Date();
+    const year = Math.min(9999, Math.max(1, parseInt(req.query.year, 10) || now.getFullYear()));
+    const monthParam = req.query.month;
+    const month = monthParam != null ? Math.min(12, Math.max(1, parseInt(monthParam, 10))) : null;
+    const groupBy = (req.query.groupBy || (month ? "day" : "month")).toLowerCase();
+
+    let bars;
+
+    if (groupBy === "day" && month != null) {
+      const daysInMonth = new Date(year, month, 0).getDate();
+      const dayAmounts = await Promise.all(
+        Array.from({ length: daysInMonth }, (_, i) => {
+          const day = i + 1;
+          const start = new Date(year, month - 1, day, 0, 0, 0, 0);
+          const end = new Date(year, month - 1, day, 23, 59, 59, 999);
+          return Payment.sum("amount_paid", {
+            where: {
+              payment_date: {
+                [Op.gte]: start,
+                [Op.lte]: end,
+              },
+            },
+          }).then((v) => ({ name: String(day), amount: Number(v) || 0 }));
+        })
+      );
+      bars = dayAmounts;
+    } else {
+      const monthAmounts = await Promise.all(
+        Array.from({ length: 12 }, (_, i) => {
+          const start = new Date(year, i, 1, 0, 0, 0, 0);
+          const end = new Date(year, i + 1, 0, 23, 59, 59, 999);
+          const monthNames = [
+            "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+          ];
+          return Payment.sum("amount_paid", {
+            where: {
+              payment_date: {
+                [Op.gte]: start,
+                [Op.lte]: end,
+              },
+            },
+          }).then((v) => ({ name: monthNames[i], amount: Number(v) || 0 }));
+        })
+      );
+      bars = monthAmounts;
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        bars,
+        year,
+        month: month ?? null,
+        groupBy: groupBy === "day" ? "day" : "month",
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching revenue chart data",
+      error: error.message,
+    });
+  }
+};
+
+module.exports = { getAll, getAppointmentsChart, getRevenueChart };

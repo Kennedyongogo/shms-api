@@ -1,6 +1,18 @@
 const { Op } = require("sequelize");
-const { Staff, User, Hospital, Department } = require("../models");
+const { Staff, User, Hospital, Department, DoctorSchedule, sequelize } = require("../models");
 const { createCrudController, parsePagination } = require("../utils/crudControllerFactory");
+
+/** Parse available_at (ISO datetime) to { dayOfWeek: 0-6, timeStr: 'HH:mm' }. Returns null if invalid. */
+function parseAvailableAt(availableAt) {
+  if (!availableAt || typeof availableAt !== "string") return null;
+  const d = new Date(availableAt.trim());
+  if (Number.isNaN(d.getTime())) return null;
+  const dayOfWeek = d.getDay();
+  const hours = d.getHours();
+  const minutes = d.getMinutes();
+  const timeStr = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:00`;
+  return { dayOfWeek, timeStr };
+}
 
 const baseInclude = [
   {
@@ -23,13 +35,39 @@ const crud = createCrudController({
 const getAll = async (req, res) => {
   try {
     const { page, limit, offset } = parsePagination(req.query);
-    const { search, staff_type, hospital_id, department_id, user_id } = req.query;
+    const { search, staff_type, hospital_id, department_id, user_id, available_at } = req.query;
 
     const where = {};
     if (staff_type) where.staff_type = staff_type;
     if (hospital_id) where.hospital_id = hospital_id;
     if (department_id) where.department_id = department_id;
     if (user_id) where.user_id = user_id;
+
+    const parsed = parseAvailableAt(available_at);
+    if (parsed) {
+      const timeStr = parsed.timeStr;
+      const scheduleRows = await DoctorSchedule.findAll({
+        attributes: ["doctor_id"],
+        where: {
+          day_of_week: parsed.dayOfWeek,
+          [Op.and]: [
+            sequelize.literal(
+              `start_time <= '${timeStr}' AND (end_time > '${timeStr}' OR end_time IN ('00:00', '00:00:00'))`
+            ),
+          ],
+        },
+        raw: true,
+      });
+      const doctorIds = [...new Set(scheduleRows.map((r) => r.doctor_id))];
+      if (doctorIds.length === 0) {
+        return res.status(200).json({
+          success: true,
+          data: [],
+          pagination: { total: 0, page: parseInt(req.query.page, 10) || 1, limit: parseInt(req.query.limit, 10) || 10, totalPages: 0 },
+        });
+      }
+      where.id = { [Op.in]: doctorIds };
+    }
 
     const userWhere = search
       ? {
@@ -61,6 +99,7 @@ const getAll = async (req, res) => {
       },
       { model: Hospital, as: "hospital", attributes: ["id", "name"], required: false },
       { model: Department, as: "department", attributes: ["id", "name"], required: false },
+      { model: DoctorSchedule, as: "schedules", attributes: ["id", "day_of_week", "start_time", "end_time"], required: false },
     ];
 
     const finalWhere = staffSearchWhere ? { ...where, [Op.and]: [staffSearchWhere] } : where;
@@ -71,6 +110,7 @@ const getAll = async (req, res) => {
       limit,
       offset,
       order: [["createdAt", "DESC"]],
+      distinct: true,
     });
 
     return res.status(200).json({

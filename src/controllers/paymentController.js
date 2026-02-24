@@ -62,8 +62,12 @@ const processPayment = async (req, res) => {
     // Generate receipt number: REC-YYYYMMDD-NNNN (daily sequence)
     const createdAt = payment.createdAt || new Date();
     const dateStr = createdAt.toISOString().slice(0, 10).replace(/-/g, "");
+    const createdAtDateStr = createdAt.toISOString().slice(0, 10);
     const sameDayCount = await Payment.count({
-      where: sequelize.where(sequelize.fn("date", sequelize.col("created_at")), createdAt.toISOString().slice(0, 10)),
+      where: sequelize.where(
+        sequelize.fn("DATE", sequelize.col("createdAt")),
+        createdAtDateStr
+      ),
     });
     const receiptNumber = `REC-${dateStr}-${String(sameDayCount).padStart(4, "0")}`;
     await payment.update({ receipt_number: receiptNumber });
@@ -80,8 +84,13 @@ const processPayment = async (req, res) => {
     await confirmAppointmentIfBillPaid(await bill.reload());
     await auditLog(req, { action: "PROCESS_PAYMENT", table_name: "Payment", record_id: payment?.id });
 
-    // Generate receipt data so frontend can show/print receipt immediately after payment
-    const receipt = await getReceiptData(payment.id);
+    // Generate receipt data so frontend can show/print receipt immediately after payment (non-fatal)
+    let receipt = null;
+    try {
+      receipt = await getReceiptData(payment.id);
+    } catch (receiptErr) {
+      // Log but do not fail the request; payment was already recorded
+    }
     return res.status(201).json({ success: true, data: { payment, bill, receipt } });
   } catch (error) {
     return res.status(500).json({ success: false, message: "Error processing payment", error: error.message });

@@ -1,18 +1,19 @@
 const express = require("express");
 const consultationController = require("../controllers/consultationController");
-const { requireAppointmentDoctorOrAdminFromBody, requireAppointmentDoctorOrAdminParam, requireConsultationDoctorOrAdmin } = require("../middleware/doctorAccess");
+const { requireAppointmentDoctorOnlyFromBody, requireAppointmentDoctorOnlyParam, requireConsultationDoctorOnly } = require("../middleware/doctorAccess");
 
 const router = express.Router();
 
-router.post("/record", requireAppointmentDoctorOrAdminFromBody("appointment_id"), consultationController.recordConsultation);
-router.patch("/:id/diagnosis", requireConsultationDoctorOrAdmin, consultationController.updateDiagnosis);
+// Only the doctor assigned to the appointment can record or manage its consultation; admin cannot.
+router.post("/record", requireAppointmentDoctorOnlyFromBody("appointment_id"), consultationController.recordConsultation);
+router.patch("/:id/diagnosis", requireConsultationDoctorOnly, consultationController.updateDiagnosis);
 
-router.post("/", requireAppointmentDoctorOrAdminFromBody("appointment_id"), consultationController.create);
+router.post("/", requireAppointmentDoctorOnlyFromBody("appointment_id"), consultationController.create);
 router.get("/", consultationController.listConsultations);
-router.get("/appointment/:appointment_id", requireAppointmentDoctorOrAdminParam("appointment_id"), consultationController.getByAppointmentId);
+router.get("/appointment/:appointment_id", requireAppointmentDoctorOnlyParam("appointment_id"), consultationController.getByAppointmentId);
 router.get("/:id", consultationController.getConsultationById);
-router.put("/:id", requireConsultationDoctorOrAdmin, consultationController.update);
-router.delete("/:id", requireConsultationDoctorOrAdmin, consultationController.remove);
+router.put("/:id", requireConsultationDoctorOnly, consultationController.update);
+router.delete("/:id", requireConsultationDoctorOnly, consultationController.remove);
 
 module.exports = router;
 
