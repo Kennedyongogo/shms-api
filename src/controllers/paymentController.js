@@ -100,7 +100,7 @@ const processPayment = async (req, res) => {
 const listPayments = async (req, res) => {
   try {
     const { page, limit, offset } = parsePagination(req.query);
-    const { search, bill_id, payment_method, from, to, for_lab, for_appointment, for_prescription } = req.query;
+    const { search, bill_id, payment_method, from, to, for_lab, for_appointment, for_prescription, for_admission } = req.query;
 
     const where = {};
     if (bill_id) where.bill_id = bill_id;
@@ -158,6 +158,14 @@ const listPayments = async (req, res) => {
         as: "items",
         required: true,
         where: { item_type: "prescription" },
+        attributes: [],
+      });
+    } else if (for_admission === "1" || for_admission === "true") {
+      billInclude.push({
+        model: BillItem,
+        as: "items",
+        required: true,
+        where: { item_type: "admission" },
         attributes: [],
       });
     }

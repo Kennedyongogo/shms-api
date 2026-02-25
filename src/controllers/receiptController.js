@@ -18,6 +18,8 @@ const {
   Bed,
   Ward,
   LabOrder,
+  LabOrderItem,
+  LabTest,
 } = require("../models");
 
 /**
@@ -102,10 +104,22 @@ async function getReceiptData(paymentId) {
           details = { type: "ward", ward: wardName, bed: bedLabel, admissionDate: admDate, dischargeDate: disDate };
         }
       } else if (type === "lab_order" && refId) {
-        const order = await LabOrder.findByPk(refId);
+        const order = await LabOrder.findByPk(refId, {
+          include: [
+            {
+              model: LabOrderItem,
+              as: "items",
+              required: false,
+              include: [{ model: LabTest, as: "labTest", required: false, attributes: ["test_name", "test_code"] }],
+            },
+          ],
+        });
         if (order) {
-          description = "Lab Order";
-          details = { type: "lab_order", orderId: order.id };
+          const testNames = (order.items || [])
+            .map((i) => i.labTest?.test_name || i.labTest?.test_code || null)
+            .filter(Boolean);
+          description = testNames.length > 0 ? `Lab order: ${testNames.join(", ")}` : "Lab order";
+          details = { type: "lab_order", orderId: order.id, tests: testNames };
         }
       }
 
@@ -234,7 +248,9 @@ async function getReceiptPdf(req, res) {
     doc.moveTo(50, lineBelowY).lineTo(pageWidth - 50, lineBelowY).stroke();
     let rowY = lineBelowY + 8;
     for (const item of receipt.items || []) {
-      const desc = item.details ? `${item.description} (${item.details.doctor || item.details.ward || item.details.prescriptionDate || ""})` : item.description;
+      // Lab order description already includes test names; others use (doctor|ward|date) suffix
+      const extra = item.details?.tests?.length ? "" : (item.details?.doctor || item.details?.ward || item.details?.prescriptionDate || "");
+      const desc = item.details && extra ? `${item.description} (${extra})` : item.description;
       doc.text(desc.substring(0, 50) + (desc.length > 50 ? "…" : ""), 50, rowY);
       doc.text(Number(item.amount || 0).toFixed(2), pageWidth - 120, rowY);
       rowY += 18;

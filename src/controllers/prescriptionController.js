@@ -1,4 +1,4 @@
-const { Prescription, PrescriptionItem, Medication, Consultation, Appointment, Staff, Bill, BillItem, Patient, User, sequelize } = require("../models");
+const { Prescription, PrescriptionItem, Medication, Consultation, Appointment, Staff, Bill, BillItem, Patient, User, DispenseRecord, sequelize } = require("../models");
 const { parsePagination } = require("../utils/crudControllerFactory");
 const { auditLog } = require("../utils/auditLog");
 
@@ -216,6 +216,7 @@ const getPrescriptionById = async (req, res) => {
           as: "items",
           include: [{ model: Medication, as: "medication" }],
         },
+        { model: DispenseRecord, as: "dispenseRecords", required: false },
       ],
     });
     if (!prescription) return res.status(404).json({ success: false, message: "Prescription not found" });

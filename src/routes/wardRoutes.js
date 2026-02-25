@@ -1,13 +1,14 @@
 const express = require("express");
 const wardController = require("../controllers/wardController");
+const { requireRoles } = require("../middleware/auth");
 
 const router = express.Router();
 
-router.post("/", wardController.create);
 router.get("/", wardController.getAll);
 router.get("/:id", wardController.getById);
-router.put("/:id", wardController.update);
-router.delete("/:id", wardController.remove);
+router.post("/", requireRoles(["admin"]), wardController.create);
+router.put("/:id", requireRoles(["admin"]), wardController.update);
+router.delete("/:id", requireRoles(["admin"]), wardController.remove);
 
 module.exports = router;
 

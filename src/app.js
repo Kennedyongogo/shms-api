@@ -48,6 +48,11 @@ const insuranceRoutes = require("./routes/insuranceRoutes");
 
 const admissionRoutes = require("./routes/admissionRoutes");
 const nursingRoutes = require("./routes/nursingRoutes");
+const dietTypeRoutes = require("./routes/dietTypeRoutes");
+const patientDietOrderRoutes = require("./routes/patientDietOrderRoutes");
+const mealPlanRoutes = require("./routes/mealPlanRoutes");
+const mealDeliveryLogRoutes = require("./routes/mealDeliveryLogRoutes");
+const mealRoundRoutes = require("./routes/mealRoundRoutes");
 const medicalReportRoutes = require("./routes/medicalReportRoutes");
 
 const serviceRoutes = require("./routes/serviceRoutes");
@@ -85,8 +90,8 @@ app.use("/api/roles", authenticateUser, roleRoutes);
 app.use("/api/hospitals", authenticateUser, hospitalRoutes);
 // Departments: allow authenticated users to view (GET); admin-only modifications enforced in route files
 app.use("/api/departments", authenticateUser, departmentRoutes);
-app.use("/api/wards", authenticateUser, requireRoles(["admin"]), wardRoutes);
-app.use("/api/beds", authenticateUser, requireRoles(["admin"]), bedRoutes);
+app.use("/api/wards", authenticateUser, wardRoutes);
+app.use("/api/beds", authenticateUser, bedRoutes);
 
 app.use("/api/staff", authenticateUser, staffRoutes);
 app.use("/api/schedules", authenticateUser, scheduleRoutes);
@@ -118,6 +123,11 @@ app.use("/api/insurance-claims", authenticateUser, insuranceRoutes);
 
 app.use("/api/admissions", authenticateUser, admissionRoutes);
 app.use("/api/nursing-notes", authenticateUser, nursingRoutes);
+app.use("/api/diet-types", authenticateUser, dietTypeRoutes);
+app.use("/api/patient-diet-orders", authenticateUser, patientDietOrderRoutes);
+app.use("/api/meal-plans", authenticateUser, mealPlanRoutes);
+app.use("/api/meal-delivery-logs", authenticateUser, mealDeliveryLogRoutes);
+app.use("/api/meal-rounds", authenticateUser, mealRoundRoutes);
 app.use("/api/medical-reports", authenticateUser, medicalReportRoutes);
 
 app.use("/api/services", serviceRoutes);

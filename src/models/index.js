@@ -1,6 +1,6 @@
 const { sequelize } = require("../config/database");
 
-// COMPLETE HOSPITAL MANAGEMENT SYSTEM – ALL MODELS (41)
+// COMPLETE HOSPITAL MANAGEMENT SYSTEM – ALL MODELS (45)
 const Role = require("./role")(sequelize);
 const Permission = require("./permission")(sequelize);
 const RolePermission = require("./rolePermission")(sequelize);
@@ -48,6 +48,11 @@ const InsuranceClaim = require("./insuranceClaim")(sequelize);
 
 const Admission = require("./admission")(sequelize);
 const NursingNote = require("./nursingNote")(sequelize);
+
+const DietType = require("./dietType")(sequelize);
+const PatientDietOrder = require("./patientDietOrder")(sequelize);
+const MealPlan = require("./mealPlan")(sequelize);
+const MealDeliveryLog = require("./mealDeliveryLog")(sequelize);
 
 const MedicalReport = require("./medicalReport")(sequelize);
 const MedicalAttachment = require("./medicalAttachment")(sequelize);
@@ -100,6 +105,10 @@ const models = {
   InsuranceClaim,
   Admission,
   NursingNote,
+  DietType,
+  PatientDietOrder,
+  MealPlan,
+  MealDeliveryLog,
   MedicalReport,
   MedicalAttachment,
   Notification,
@@ -177,6 +186,10 @@ const initializeModels = async () => {
     // 11) INPATIENT MODULE
     await Admission.sync({ force: false, alter: false });
     await NursingNote.sync({ force: false, alter: false });
+    await DietType.sync({ force: false, alter: false });
+    await PatientDietOrder.sync({ force: false, alter: false });
+    await MealPlan.sync({ force: false, alter: false });
+    await MealDeliveryLog.sync({ force: false, alter: false });
 
     // 12) DOCUMENTS & SYSTEM SUPPORT
     await MedicalReport.sync({ force: false, alter: false });
@@ -701,6 +714,30 @@ const setupAssociations = () => {
       foreignKey: "admission_id",
       as: "admission",
     });
+
+    // Diet / Food (inpatient)
+    DietType.hasMany(PatientDietOrder, { foreignKey: "diet_type_id", as: "patientDietOrders" });
+    PatientDietOrder.belongsTo(DietType, { foreignKey: "diet_type_id", as: "dietType" });
+    Admission.hasMany(PatientDietOrder, {
+      foreignKey: "admission_id",
+      as: "dietOrders",
+      onDelete: "CASCADE",
+    });
+    PatientDietOrder.belongsTo(Admission, { foreignKey: "admission_id", as: "admission" });
+    Staff.hasMany(PatientDietOrder, { foreignKey: "prescribed_by", as: "prescribedDietOrders" });
+    PatientDietOrder.belongsTo(Staff, { foreignKey: "prescribed_by", as: "prescribedBy" });
+
+    DietType.hasMany(MealPlan, { foreignKey: "diet_type_id", as: "mealPlans" });
+    MealPlan.belongsTo(DietType, { foreignKey: "diet_type_id", as: "dietType" });
+
+    Admission.hasMany(MealDeliveryLog, {
+      foreignKey: "admission_id",
+      as: "mealDeliveryLogs",
+      onDelete: "CASCADE",
+    });
+    MealDeliveryLog.belongsTo(Admission, { foreignKey: "admission_id", as: "admission" });
+    Staff.hasMany(MealDeliveryLog, { foreignKey: "delivered_by", as: "mealDeliveryLogs" });
+    MealDeliveryLog.belongsTo(Staff, { foreignKey: "delivered_by", as: "deliveredBy" });
 
     // Misc
     User.hasMany(MedicalAttachment, {

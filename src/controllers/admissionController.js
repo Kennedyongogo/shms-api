@@ -55,6 +55,7 @@ const listAdmissions = async (req, res) => {
         { model: Appointment, as: "appointment", attributes: ["id", "appointment_date", "doctor_id", "patient_id"], include: [{ model: Staff, as: "doctor", attributes: ["id"], include: [{ model: User, as: "user", attributes: ["id", "full_name"] }] }] },
         { model: Staff, as: "doctor", attributes: ["id"], include: [{ model: User, as: "user", attributes: ["id", "full_name"] }] },
         { model: Bed, as: "bed", attributes: ["id", "bed_number", "status", "ward_id"], include: [{ model: Ward, as: "ward", attributes: ["id", "name", "type"], include: [{ model: Department, as: "department", attributes: ["id", "name"] }] }] },
+        { model: NursingNote, as: "nursingNotes", separate: true, order: [["recorded_at", "DESC"]], include: [{ model: Staff, as: "nurse", attributes: ["id"], required: false, include: [{ model: User, as: "user", attributes: ["id", "full_name"] }] }] },
       ],
       order: [["admission_date", "DESC"]],
     });

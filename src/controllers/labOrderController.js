@@ -31,6 +31,17 @@ function isLabTechnicianStaff(staff) {
   return t.includes("lab") || t.includes("laboratory") || t.includes("technician");
 }
 
+/** True if the current user is the staff/doctor assigned to the appointment linked to this lab order (via consultation). */
+async function isAssignedDoctorForLabOrder(req, order) {
+  const staff = await getCurrentStaff(req);
+  if (!staff || !order?.consultation_id) return false;
+  const consultation = await Consultation.findByPk(order.consultation_id, { attributes: ["appointment_id"] });
+  if (!consultation?.appointment_id) return false;
+  const appt = await Appointment.findByPk(consultation.appointment_id, { attributes: ["doctor_id"] });
+  if (!appt?.doctor_id) return false;
+  return String(appt.doctor_id) === String(staff.id);
+}
+
 const createLabOrder = async (req, res) => {
   try {
     const { patient_id, doctor_id, consultation_id, items } = req.body;
@@ -223,25 +234,27 @@ const updateStatus = async (req, res) => {
         .status(404)
         .json({ success: false, message: "Lab order not found" });
 
-    // Status updates are intended for admin or lab technician staff.
+    // Status updates: admin, or lab technician, or staff assigned to the appointment (like consultation).
     if (!isAdmin(req)) {
       const staff = await getCurrentStaff(req);
       if (!staff) {
         return res.status(403).json({ success: false, message: "Access denied: staff account required" });
       }
-      if (!isLabTechnicianStaff(staff)) {
-        return res.status(403).json({ success: false, message: "Access denied: lab technician required" });
+      const isLabTech = isLabTechnicianStaff(staff);
+      const isAssignedDoctor = await isAssignedDoctorForLabOrder(req, order);
+      if (!isLabTech && !isAssignedDoctor) {
+        return res.status(403).json({
+          success: false,
+          message: "Access denied: lab technician or doctor assigned to this appointment required",
+        });
       }
 
-      // Lab technician rule:
-      // - while unpaid: only allow moving to in_progress
-      // - once paid: allow moving to completed
-      // (no cancelling from lab tech to keep workflow controlled)
+      // Lab technician and assigned doctor: same workflow rules (no cancel, no set back to pending).
       if (status === "cancelled") {
         return res.status(403).json({ success: false, message: "Only admins can cancel lab orders" });
       }
       if (status === "pending") {
-        return res.status(403).json({ success: false, message: "Lab technicians cannot set status back to pending" });
+        return res.status(403).json({ success: false, message: "Cannot set status back to pending" });
       }
     }
 

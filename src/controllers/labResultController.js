@@ -1,8 +1,32 @@
 const { Op } = require("sequelize");
-const { LabResult, LabOrderItem, LabTest, LabOrder, Patient, User, Staff } = require("../models");
+const { LabResult, LabOrderItem, LabTest, LabOrder, Patient, User, Staff, Consultation, Appointment } = require("../models");
 const { parsePagination } = require("../utils/crudControllerFactory");
 const { requirePaidByReferenceOrRespond } = require("../utils/paymentGate");
 const { auditLog } = require("../utils/auditLog");
+
+const isAdmin = (req) => req.userType === "user" && req.role?.name === "admin";
+
+async function getCurrentStaff(req) {
+  if (!req.userId) return null;
+  const staff = await Staff.findOne({ where: { user_id: req.userId } });
+  return staff || null;
+}
+
+function isLabTechnicianStaff(staff) {
+  const t = String(staff?.staff_type || "").toLowerCase();
+  return t.includes("lab") || t.includes("laboratory") || t.includes("technician");
+}
+
+/** True if the current user is the staff/doctor assigned to the appointment linked to this lab order. */
+async function isAssignedDoctorForLabOrder(req, order) {
+  const staff = await getCurrentStaff(req);
+  if (!staff || !order?.consultation_id) return false;
+  const consultation = await Consultation.findByPk(order.consultation_id, { attributes: ["appointment_id"] });
+  if (!consultation?.appointment_id) return false;
+  const appt = await Appointment.findByPk(consultation.appointment_id, { attributes: ["doctor_id"] });
+  if (!appt?.doctor_id) return false;
+  return String(appt.doctor_id) === String(staff.id);
+}
 
 const include = [
   {
@@ -76,6 +100,24 @@ const enterResults = async (req, res) => {
 
     const item = await LabOrderItem.findByPk(lab_order_item_id);
     if (!item) return res.status(404).json({ success: false, message: "Lab order item not found" });
+
+    // Only admin, lab technician, or doctor assigned to the appointment can enter/update results (like consultation).
+    if (!isAdmin(req)) {
+      const staff = await getCurrentStaff(req);
+      if (!staff) {
+        return res.status(403).json({ success: false, message: "Access denied: staff account required" });
+      }
+      const order = await LabOrder.findByPk(item.lab_order_id, { attributes: ["id", "consultation_id"] });
+      if (!order) return res.status(404).json({ success: false, message: "Lab order not found" });
+      const isLabTech = isLabTechnicianStaff(staff);
+      const isAssignedDoctor = await isAssignedDoctorForLabOrder(req, order);
+      if (!isLabTech && !isAssignedDoctor) {
+        return res.status(403).json({
+          success: false,
+          message: "Access denied: lab technician or doctor assigned to this appointment required to enter results",
+        });
+      }
+    }
 
     // Enforce payment before results can be entered/updated.
     const ok = await requirePaidByReferenceOrRespond(res, {
