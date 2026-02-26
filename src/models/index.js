@@ -4,6 +4,7 @@ const { sequelize } = require("../config/database");
 const Role = require("./role")(sequelize);
 const Permission = require("./permission")(sequelize);
 const RolePermission = require("./rolePermission")(sequelize);
+const RoleMenuItem = require("./roleMenuItem")(sequelize);
 
 const User = require("./user")(sequelize);
 const Hospital = require("./hospital")(sequelize);
@@ -71,6 +72,7 @@ const models = {
   Role,
   Permission,
   RolePermission,
+  RoleMenuItem,
   User,
   Hospital,
   Department,
@@ -132,6 +134,7 @@ const initializeModels = async () => {
     await Role.sync({ force: false, alter: false });
     await Permission.sync({ force: false, alter: false });
     await RolePermission.sync({ force: false, alter: false });
+    await RoleMenuItem.sync({ force: false, alter: false });
     await User.sync({ force: false, alter: false });
 
     // 2) HOSPITAL STRUCTURE
@@ -237,6 +240,9 @@ const setupAssociations = () => {
       otherKey: "role_id",
       as: "roles",
     });
+
+    Role.hasMany(RoleMenuItem, { foreignKey: "role_id", as: "menuItems" });
+    RoleMenuItem.belongsTo(Role, { foreignKey: "role_id", as: "role" });
 
     User.hasOne(Patient, { foreignKey: "user_id", as: "patient" });
     Patient.belongsTo(User, { foreignKey: "user_id", as: "user" });

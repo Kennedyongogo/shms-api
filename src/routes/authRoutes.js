@@ -1,6 +1,7 @@
 const express = require("express");
 const { authenticateUser } = require("../middleware/auth");
-const { login, logout, register, resetPassword, bootstrapPromoteMe } = require("../controllers/authController");
+const { uploadUserProfileImage, handleUploadError } = require("../middleware/upload");
+const { login, logout, register, resetPassword, bootstrapPromoteMe, me, changePassword, updateMe, updateMyProfileImage } = require("../controllers/authController");
 
 const router = express.Router();
 
@@ -8,6 +9,10 @@ router.post("/register", register);
 router.post("/login", login);
 router.post("/logout", logout);
 router.post("/reset-password", resetPassword);
+router.get("/me", authenticateUser, me);
+router.patch("/me", authenticateUser, updateMe);
+router.put("/me/profile-image", authenticateUser, uploadUserProfileImage, handleUploadError, updateMyProfileImage);
+router.post("/change-password", authenticateUser, changePassword);
 router.post("/bootstrap/promote-me", authenticateUser, bootstrapPromoteMe);
 
 module.exports = router;

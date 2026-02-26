@@ -102,14 +102,22 @@ const getAll = async (req, res) => {
       Patient.count(),
       Patient.count({ where: { status: "active" } }),
       Patient.findAll({ attributes: ["status"], raw: true }).then((rows) => {
-        const byStatus = {};
-        rows.forEach((r) => { byStatus[r.status] = (byStatus[r.status] || 0) + 1; });
+        const byStatus = { active: 0, inactive: 0, suspended: 0 };
+        rows.forEach((r) => {
+          const s = r.status || "active";
+          if (Object.prototype.hasOwnProperty.call(byStatus, s)) byStatus[s] += 1;
+          else byStatus[s] = 1;
+        });
         return byStatus;
       }),
       Appointment.count(),
       Appointment.findAll({ attributes: ["status"], raw: true }).then((rows) => {
-        const byStatus = {};
-        rows.forEach((r) => { byStatus[r.status] = (byStatus[r.status] || 0) + 1; });
+        const byStatus = { pending: 0, confirmed: 0, completed: 0, cancelled: 0 };
+        rows.forEach((r) => {
+          const s = r.status || "pending";
+          if (Object.prototype.hasOwnProperty.call(byStatus, s)) byStatus[s] += 1;
+          else byStatus[s] = 1;
+        });
         return byStatus;
       }),
       Appointment.count({ where: { appointment_date: { [Op.gte]: todayStart } } }),
@@ -119,8 +127,12 @@ const getAll = async (req, res) => {
       Consultation.count({ where: { createdAt: { [Op.gte]: monthStart } } }),
       LabOrder.count(),
       LabOrder.findAll({ attributes: ["status"], raw: true }).then((rows) => {
-        const byStatus = {};
-        rows.forEach((r) => { byStatus[r.status] = (byStatus[r.status] || 0) + 1; });
+        const byStatus = { pending: 0, in_progress: 0, completed: 0, cancelled: 0 };
+        rows.forEach((r) => {
+          const s = r.status || "pending";
+          if (Object.prototype.hasOwnProperty.call(byStatus, s)) byStatus[s] += 1;
+          else byStatus[s] = 1;
+        });
         return byStatus;
       }),
       LabResult.count(),
@@ -130,8 +142,12 @@ const getAll = async (req, res) => {
       DispenseRecord.count(),
       Bill.count(),
       Bill.findAll({ attributes: ["status"], raw: true }).then((rows) => {
-        const byStatus = {};
-        rows.forEach((r) => { byStatus[r.status] = (byStatus[r.status] || 0) + 1; });
+        const byStatus = { unpaid: 0, partial: 0, paid: 0, cancelled: 0 };
+        rows.forEach((r) => {
+          const s = r.status || "unpaid";
+          if (Object.prototype.hasOwnProperty.call(byStatus, s)) byStatus[s] += 1;
+          else byStatus[s] = 1;
+        });
         return byStatus;
       }),
       Payment.sum("amount_paid").then((v) => Number(v) || 0),
@@ -151,8 +167,12 @@ const getAll = async (req, res) => {
       Supplier.count(),
       PurchaseOrder.count(),
       PurchaseOrder.findAll({ attributes: ["status"], raw: true }).then((rows) => {
-        const byStatus = {};
-        rows.forEach((r) => { byStatus[r.status] = (byStatus[r.status] || 0) + 1; });
+        const byStatus = { draft: 0, ordered: 0, received: 0, cancelled: 0 };
+        rows.forEach((r) => {
+          const s = r.status || "draft";
+          if (Object.prototype.hasOwnProperty.call(byStatus, s)) byStatus[s] += 1;
+          else byStatus[s] = 1;
+        });
         return byStatus;
       }),
       MedicalReport.count(),
@@ -161,8 +181,12 @@ const getAll = async (req, res) => {
       Event.count(),
       News.count(),
       Bed.findAll({ attributes: ["status"], raw: true }).then((rows) => {
-        const byStatus = {};
-        rows.forEach((r) => { byStatus[r.status] = (byStatus[r.status] || 0) + 1; });
+        const byStatus = { available: 0, occupied: 0, maintenance: 0 };
+        rows.forEach((r) => {
+          const s = r.status || "available";
+          if (Object.prototype.hasOwnProperty.call(byStatus, s)) byStatus[s] += 1;
+          else byStatus[s] = 1;
+        });
         return byStatus;
       }),
     ]);
@@ -416,4 +440,129 @@ const getRevenueChart = async (req, res) => {
   }
 };
 
-module.exports = { getAll, getAppointmentsChart, getRevenueChart };
+/**
+ * GET /api/statistics/pharmacy/chart
+ * Returns medications with multiple quantity columns for a bar chart.
+ * Each bar = one medication; frontend can switch which column is shown (quantity_available, quantity_in_pharmacy, reorder_level).
+ */
+const getPharmacyChart = async (req, res) => {
+  try {
+    const medications = await Medication.findAll({
+      attributes: ["id", "name"],
+      include: [
+        {
+          model: InventoryItem,
+          as: "inventoryItem",
+          required: false,
+          attributes: ["quantity_available", "quantity_in_pharmacy", "reorder_level"],
+        },
+      ],
+      order: [["name", "ASC"]],
+    });
+
+    const bars = medications.map((m) => {
+      const inv = m.inventoryItem;
+      return {
+        name: m.name || "Unnamed",
+        quantity_available: inv ? Number(inv.quantity_available) || 0 : 0,
+        quantity_in_pharmacy: inv ? Number(inv.quantity_in_pharmacy) || 0 : 0,
+        reorder_level: inv ? Number(inv.reorder_level) || 0 : 0,
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        bars,
+        columns: [
+          { key: "quantity_available", label: "Quantity in store" },
+          { key: "quantity_in_pharmacy", label: "Quantity in pharmacy" },
+          { key: "reorder_level", label: "Reorder level" },
+        ],
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching pharmacy chart data",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * GET /api/statistics/admissions/chart
+ * Query: year (optional, default current), month (optional 1-12), groupBy (optional: 'month' | 'day')
+ * Returns bar data for admissions by admission_date:
+ * - If month is provided: one bar per day in that month.
+ * - If only year: one bar per month Jan–Dec.
+ */
+const getAdmissionsChart = async (req, res) => {
+  try {
+    const now = new Date();
+    const year = Math.min(9999, Math.max(1, parseInt(req.query.year, 10) || now.getFullYear()));
+    const monthParam = req.query.month;
+    const month = monthParam != null ? Math.min(12, Math.max(1, parseInt(monthParam, 10))) : null;
+    const groupBy = (req.query.groupBy || (month ? "day" : "month")).toLowerCase();
+
+    let bars;
+
+    if (groupBy === "day" && month != null) {
+      const daysInMonth = new Date(year, month, 0).getDate();
+      const dayCounts = await Promise.all(
+        Array.from({ length: daysInMonth }, (_, i) => {
+          const day = i + 1;
+          const start = new Date(year, month - 1, day, 0, 0, 0, 0);
+          const end = new Date(year, month - 1, day, 23, 59, 59, 999);
+          return Admission.count({
+            where: {
+              admission_date: {
+                [Op.gte]: start,
+                [Op.lte]: end,
+              },
+            },
+          }).then((count) => ({ name: String(day), count }));
+        })
+      );
+      bars = dayCounts;
+    } else {
+      const monthCounts = await Promise.all(
+        Array.from({ length: 12 }, (_, i) => {
+          const start = new Date(year, i, 1, 0, 0, 0, 0);
+          const end = new Date(year, i + 1, 0, 23, 59, 59, 999);
+          const monthNames = [
+            "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+          ];
+          return Admission.count({
+            where: {
+              admission_date: {
+                [Op.gte]: start,
+                [Op.lte]: end,
+              },
+            },
+          }).then((count) => ({ name: monthNames[i], count }));
+        })
+      );
+      bars = monthCounts;
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        bars,
+        year,
+        month: month ?? null,
+        groupBy: groupBy === "day" ? "day" : "month",
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching admissions chart data",
+      error: error.message,
+    });
+  }
+};
+
+module.exports = { getAll, getAppointmentsChart, getRevenueChart, getPharmacyChart, getAdmissionsChart };

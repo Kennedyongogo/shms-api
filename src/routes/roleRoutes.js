@@ -7,6 +7,8 @@ const router = express.Router();
 // Any authenticated user can view roles; only admin can modify
 router.post("/", requireRoles(["admin"]), roleController.create);
 router.get("/", roleController.getAll);
+router.get("/:id/menu-items", roleController.getMenuItems);
+router.put("/:id/menu-items", requireRoles(["admin"]), roleController.putMenuItems);
 router.get("/:id", roleController.getById);
 router.put("/:id", requireRoles(["admin"]), roleController.update);
 router.delete("/:id", requireRoles(["admin"]), roleController.remove);

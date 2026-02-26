@@ -1,8 +1,11 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const path = require("path");
 const { User, Role } = require("../models");
 const config = require("../config/config");
 const { auditLog } = require("../utils/auditLog");
+const { getMenuItemsForRole } = require("../utils/menuItems");
+const { deleteFile, toRelativeUploadPath } = require("../middleware/upload");
 
 const normalizeKenyanPhone = (input) => {
   if (input == null) return null;
@@ -112,8 +115,12 @@ const login = async (req, res) => {
     await user.update({ last_login: new Date() });
     const token = jwt.sign({ id: user.id, type: "user" }, config.jwtSecret, { expiresIn: "7d" });
     const role = await Role.findByPk(user.role_id);
+    const menuItems = await getMenuItemsForRole(role?.id, role?.name);
     await auditLog({ user: { id: user.id } }, { action: "LOGIN", table_name: "auth" });
-    return res.status(200).json({ success: true, data: { user: sanitizeUser(user), role, token } });
+    return res.status(200).json({
+      success: true,
+      data: { user: sanitizeUser(user), role, token, menuItems },
+    });
   } catch (error) {
     return res.status(500).json({ success: false, message: "Error logging in", error: error.message });
   }
@@ -171,5 +178,178 @@ const resetPassword = async (req, res) => {
   }
 };
 
-module.exports = { login, logout, register, resetPassword, bootstrapPromoteMe };
+const me = async (req, res) => {
+  try {
+    const userId = req.userId;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Authentication required" });
+    }
+    const user = await User.findByPk(userId, { attributes: { exclude: ["password"] } });
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+    const role = await Role.findByPk(user.role_id);
+    const menuItems = await getMenuItemsForRole(role?.id, role?.name);
+    return res.status(200).json({
+      success: true,
+      data: { user: sanitizeUser(user), role: role || null, menuItems },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching current user",
+      error: error.message,
+    });
+  }
+};
+
+/** Validate new password: length >= 8, uppercase, lowercase, digit, special. */
+function validateNewPassword(password) {
+  if (!password || typeof password !== "string") return { valid: false, message: "Password is required" };
+  const p = password;
+  if (p.length < 8) return { valid: false, message: "Password must be at least 8 characters long" };
+  if (!/[A-Z]/.test(p)) return { valid: false, message: "Password must contain at least one uppercase letter" };
+  if (!/[a-z]/.test(p)) return { valid: false, message: "Password must contain at least one lowercase letter" };
+  if (!/\d/.test(p)) return { valid: false, message: "Password must contain at least one digit" };
+  if (!/[!@#$%^&*(),.?":{}|<>_\-+=[\]\\;/'`~]/.test(p)) {
+    return { valid: false, message: "Password must contain at least one special character" };
+  }
+  return { valid: true };
+}
+
+/** POST /api/auth/change-password — logged-in user changes own password (currentPassword + newPassword). */
+const changePassword = async (req, res) => {
+  try {
+    const userId = req.userId;
+    if (!userId) return res.status(401).json({ success: false, message: "Authentication required" });
+
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword) {
+      return res.status(400).json({ success: false, message: "currentPassword is required" });
+    }
+    if (!newPassword) {
+      return res.status(400).json({ success: false, message: "newPassword is required" });
+    }
+
+    const validation = validateNewPassword(newPassword);
+    if (!validation.valid) {
+      return res.status(400).json({ success: false, message: validation.message });
+    }
+
+    const user = await User.findByPk(userId);
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+
+    const match = await bcrypt.compare(currentPassword, user.password);
+    if (!match) {
+      return res.status(400).json({ success: false, message: "Current password is incorrect" });
+    }
+
+    const hashed = await bcrypt.hash(newPassword, 10);
+    await user.update({ password: hashed });
+    await auditLog(req, { action: "CHANGE_PASSWORD", table_name: "User", record_id: userId });
+    return res.status(200).json({ success: true, message: "Password updated successfully" });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Error changing password",
+      error: error.message,
+    });
+  }
+};
+
+/** PATCH /api/auth/me — logged-in user updates own profile (full_name, phone only). */
+const updateMe = async (req, res) => {
+  try {
+    const userId = req.userId;
+    if (!userId) return res.status(401).json({ success: false, message: "Authentication required" });
+
+    const user = await User.findByPk(userId);
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+
+    const updates = {};
+    if (req.body.full_name != null) {
+      const name = String(req.body.full_name).trim();
+      updates.full_name = name || user.full_name;
+    }
+    if (req.body.phone != null) {
+      const raw = String(req.body.phone).trim();
+      if (raw === "") {
+        updates.phone = null;
+      } else {
+        try {
+          updates.phone = normalizeKenyanPhone(req.body.phone);
+        } catch (e) {
+          return res.status(400).json({ success: false, message: e.message });
+        }
+      }
+    }
+
+    if (Object.keys(updates).length === 0) {
+      const role = await Role.findByPk(user.role_id);
+      const menuItems = await getMenuItemsForRole(role?.id, role?.name);
+      return res.status(200).json({
+        success: true,
+        data: { user: sanitizeUser(user), role: role || null, menuItems },
+      });
+    }
+
+    await user.update(updates);
+    await user.reload();
+    await auditLog(req, { action: "UPDATE_ME", table_name: "User", record_id: userId });
+    const role = await Role.findByPk(user.role_id);
+    const menuItems = await getMenuItemsForRole(role?.id, role?.name);
+    return res.status(200).json({
+      success: true,
+      data: { user: sanitizeUser(user), role: role || null, menuItems },
+      message: "Profile updated successfully",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Error updating profile",
+      error: error.message,
+    });
+  }
+};
+
+/** PUT /api/auth/me/profile-image — logged-in user uploads own profile image. */
+const updateMyProfileImage = async (req, res) => {
+  try {
+    const userId = req.userId;
+    if (!userId) return res.status(401).json({ success: false, message: "Authentication required" });
+
+    const user = await User.findByPk(userId);
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+
+    const filePath = req.file?.path || (req.file?.destination && req.file?.filename ? path.join(req.file.destination, req.file.filename) : null);
+    if (!filePath) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing file field "profile_image"',
+      });
+    }
+
+    if (user.profile_image_path) {
+      const absOld = path.join(__dirname, "..", "..", user.profile_image_path);
+      await deleteFile(absOld);
+    }
+
+    const relative = toRelativeUploadPath(filePath);
+    const updated = await user.update({ profile_image_path: relative });
+    await auditLog(req, { action: "UPDATE_MY_PROFILE_IMAGE", table_name: "User", record_id: userId });
+    const role = await Role.findByPk(updated.role_id);
+    const menuItems = await getMenuItemsForRole(role?.id, role?.name);
+    return res.status(200).json({
+      success: true,
+      data: { user: sanitizeUser(updated), role: role || null, menuItems },
+      message: "Profile picture updated",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Error updating profile image",
+      error: error.message,
+    });
+  }
+};
+
+module.exports = { login, logout, register, resetPassword, bootstrapPromoteMe, me, changePassword, updateMe, updateMyProfileImage };
 
