@@ -33,6 +33,11 @@ module.exports = (sequelize) => {
         allowNull: true,
         comment: "Human-readable receipt id e.g. REC-YYYYMMDD-NNNN, set when payment is created",
       },
+      mpesa_receipt_number: {
+        type: DataTypes.STRING(50),
+        allowNull: true,
+        comment: "M-Pesa transaction code when payment_method is mpesa",
+      },
     },
     {
       tableName: "payments",
