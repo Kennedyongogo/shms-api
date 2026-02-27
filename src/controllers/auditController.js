@@ -27,5 +27,20 @@ const viewLogs = async (req, res) => {
   }
 };
 
-module.exports = { viewLogs };
+const viewOneLog = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const log = await AuditLog.findByPk(id, {
+      include: [{ model: User, as: "user", attributes: ["id", "full_name", "email"], required: false }],
+    });
+    if (!log) {
+      return res.status(404).json({ success: false, message: "Audit log not found" });
+    }
+    return res.status(200).json({ success: true, data: log });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: "Error fetching audit log", error: error.message });
+  }
+};
+
+module.exports = { viewLogs, viewOneLog };
 
