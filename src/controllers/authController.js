@@ -1,11 +1,12 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const path = require("path");
-const { User, Role } = require("../models");
+const { User, Role, Hospital, RoleMenuItem } = require("../models");
 const config = require("../config/config");
 const { auditLog } = require("../utils/auditLog");
-const { getMenuItemsForRole } = require("../utils/menuItems");
+const { getMenuItemsForRole, filterMenuItemsByPackage } = require("../utils/menuItems");
 const { deleteFile, toRelativeUploadPath } = require("../middleware/upload");
+const { ALL_MENU_KEYS } = require("../constants/menuKeys");
 
 const normalizeKenyanPhone = (input) => {
   if (input == null) return null;
@@ -47,6 +48,141 @@ const getRoleIdByNameOrFail = async (name) => {
 
 const getDefaultRoleId = async () => getRoleIdByNameOrFail("patient");
 const getAdminRoleId = async () => getRoleIdByNameOrFail("admin");
+
+const SUPERADMIN_ROLE_NAME = "Super Admin";
+const VALID_PACKAGES = ["silver", "gold"];
+
+/**
+ * Register a new organization (hospital/clinic) with first user as Super Admin.
+ * Body (JSON): hospital: { name, address?, phone?, email? }, full_name, email, password, confirm_password, package: 'silver'|'gold'
+ * Body (multipart): hospital_name, hospital_address?, hospital_phone?, hospital_email?, full_name, email, phone?, password, confirm_password, package; optional file: hospital_logo
+ */
+const registerOrganization = async (req, res) => {
+  try {
+    let hospitalPayload;
+    let full_name;
+    let email;
+    let phone;
+    let password;
+    let confirm_password;
+    let pkg;
+
+    if (req.body.hospital && typeof req.body.hospital === "object") {
+      hospitalPayload = req.body.hospital;
+      full_name = req.body.full_name;
+      email = req.body.email;
+      phone = req.body.phone;
+      password = req.body.password;
+      confirm_password = req.body.confirm_password;
+      pkg = req.body.package;
+    } else {
+      hospitalPayload = {
+        name: req.body.hospital_name,
+        address: req.body.hospital_address,
+        phone: req.body.hospital_phone,
+        email: req.body.hospital_email,
+      };
+      full_name = req.body.full_name;
+      email = req.body.email;
+      phone = req.body.phone;
+      password = req.body.password;
+      confirm_password = req.body.confirm_password;
+      pkg = req.body.package;
+    }
+
+    if (!full_name || !email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "full_name, email, password are required",
+      });
+    }
+    if (!hospitalPayload || !String(hospitalPayload.name || "").trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "hospital name is required",
+      });
+    }
+    const packageVal = (pkg || "silver").toLowerCase();
+    if (!VALID_PACKAGES.includes(packageVal)) {
+      return res.status(400).json({
+        success: false,
+        message: "package must be silver or gold",
+      });
+    }
+    if (confirm_password != null && password !== confirm_password) {
+      return res.status(400).json({ success: false, message: "Passwords do not match" });
+    }
+
+    const exists = await User.findOne({ where: { email: String(email).toLowerCase().trim() } });
+    if (exists) return res.status(400).json({ success: false, message: "Email already in use" });
+
+    const hashed = await bcrypt.hash(password, 10);
+    let normalizedPhone = null;
+    if (phone) {
+      try {
+        normalizedPhone = normalizeKenyanPhone(phone);
+      } catch (e) {
+        return res.status(400).json({ success: false, message: e.message });
+      }
+    }
+
+    const logoPath = req.file ? toRelativeUploadPath(req.file.path) : null;
+    const hospital = await Hospital.create({
+      name: String(hospitalPayload.name).trim(),
+      address: hospitalPayload.address ? String(hospitalPayload.address).trim() : null,
+      phone: hospitalPayload.phone ? String(hospitalPayload.phone).trim() : null,
+      email: hospitalPayload.email ? String(hospitalPayload.email).trim() : null,
+      logo_path: logoPath,
+      subscription_package: packageVal,
+    });
+
+    const superAdminRole = await Role.create({
+      name: SUPERADMIN_ROLE_NAME,
+      hospital_id: hospital.id,
+    });
+    await RoleMenuItem.bulkCreate(
+      ALL_MENU_KEYS.map((menu_key) => ({ role_id: superAdminRole.id, menu_key }))
+    );
+
+    const user = await User.create({
+      full_name: String(full_name).trim(),
+      email: email.toLowerCase().trim(),
+      phone: normalizedPhone,
+      password: hashed,
+      role_id: superAdminRole.id,
+      hospital_id: hospital.id,
+      status: "active",
+      last_login: null,
+    });
+
+    const token = jwt.sign({ id: user.id, type: "user" }, config.jwtSecret, { expiresIn: "7d" });
+    const role = await Role.findByPk(superAdminRole.id);
+    let menuItems = await getMenuItemsForRole(role.id, role.name);
+    menuItems = filterMenuItemsByPackage(menuItems, hospital.subscription_package);
+
+    await auditLog(
+      { user: { id: user.id } },
+      { action: "REGISTER_ORGANIZATION", table_name: "Hospital", record_id: hospital.id }
+    );
+
+    return res.status(201).json({
+      success: true,
+      data: {
+        user: sanitizeUser(user),
+        role,
+        hospital: { id: hospital.id, name: hospital.name, subscription_package: hospital.subscription_package },
+        token,
+        menuItems,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Error registering organization",
+      error: error.message,
+    });
+  }
+};
 
 const register = async (req, res) => {
   try {
@@ -102,7 +238,10 @@ const login = async (req, res) => {
       return res.status(400).json({ success: false, message: "email and password are required" });
     }
 
-    const user = await User.findOne({ where: { email } });
+    const user = await User.findOne({
+      where: { email: String(email).toLowerCase().trim() },
+      include: [{ association: "hospital", required: false }],
+    });
     if (!user) return res.status(401).json({ success: false, message: "Invalid credentials" });
 
     const ok = await bcrypt.compare(password, user.password);
@@ -115,11 +254,21 @@ const login = async (req, res) => {
     await user.update({ last_login: new Date() });
     const token = jwt.sign({ id: user.id, type: "user" }, config.jwtSecret, { expiresIn: "7d" });
     const role = await Role.findByPk(user.role_id);
-    const menuItems = await getMenuItemsForRole(role?.id, role?.name);
+    let menuItems = await getMenuItemsForRole(role?.id, role?.name);
+    const hospital = user.hospital || (user.hospital_id ? await Hospital.findByPk(user.hospital_id) : null);
+    if (hospital && hospital.subscription_package) {
+      menuItems = filterMenuItemsByPackage(menuItems, hospital.subscription_package);
+    }
     await auditLog({ user: { id: user.id } }, { action: "LOGIN", table_name: "auth" });
     return res.status(200).json({
       success: true,
-      data: { user: sanitizeUser(user), role, token, menuItems },
+      data: {
+        user: sanitizeUser(user),
+        role,
+        token,
+        menuItems,
+        hospital: hospital ? { id: hospital.id, name: hospital.name, subscription_package: hospital.subscription_package } : null,
+      },
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: "Error logging in", error: error.message });
@@ -165,8 +314,8 @@ const resetPassword = async (req, res) => {
     if (!email || !new_password) {
       return res.status(400).json({ success: false, message: "email and new_password are required" });
     }
-
-    const user = await User.findOne({ where: { email } });
+    const normalizedEmail = String(email).toLowerCase().trim();
+    const user = await User.findOne({ where: { email: normalizedEmail } });
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
 
     const hashed = await bcrypt.hash(new_password, 10);
@@ -184,13 +333,25 @@ const me = async (req, res) => {
     if (!userId) {
       return res.status(401).json({ success: false, message: "Authentication required" });
     }
-    const user = await User.findByPk(userId, { attributes: { exclude: ["password"] } });
+    const user = await User.findByPk(userId, {
+      attributes: { exclude: ["password"] },
+      include: [{ association: "hospital", required: false }],
+    });
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
     const role = await Role.findByPk(user.role_id);
-    const menuItems = await getMenuItemsForRole(role?.id, role?.name);
+    let menuItems = await getMenuItemsForRole(role?.id, role?.name);
+    const hospital = user.hospital || (user.hospital_id ? await Hospital.findByPk(user.hospital_id) : null);
+    if (hospital && hospital.subscription_package) {
+      menuItems = filterMenuItemsByPackage(menuItems, hospital.subscription_package);
+    }
     return res.status(200).json({
       success: true,
-      data: { user: sanitizeUser(user), role: role || null, menuItems },
+      data: {
+        user: sanitizeUser(user),
+        role: role || null,
+        menuItems,
+        hospital: hospital ? { id: hospital.id, name: hospital.name, subscription_package: hospital.subscription_package } : null,
+      },
     });
   } catch (error) {
     return res.status(500).json({
@@ -351,5 +512,16 @@ const updateMyProfileImage = async (req, res) => {
   }
 };
 
-module.exports = { login, logout, register, resetPassword, bootstrapPromoteMe, me, changePassword, updateMe, updateMyProfileImage };
+module.exports = {
+  login,
+  logout,
+  register,
+  registerOrganization,
+  resetPassword,
+  bootstrapPromoteMe,
+  me,
+  changePassword,
+  updateMe,
+  updateMyProfileImage,
+};
 

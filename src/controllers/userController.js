@@ -71,6 +71,11 @@ const create = async (req, res) => {
         .json({ success: false, message: "Passwords do not match" });
     }
 
+    const hospitalId = req.user?.hospital_id;
+    if (hospitalId == null) {
+      return res.status(400).json({ success: false, message: "User must belong to a hospital to create users" });
+    }
+
     const hashedPassword = await bcrypt.hash(password, 10);
     let resolvedRoleId = role_id;
     if (!resolvedRoleId) {
@@ -80,11 +85,19 @@ const create = async (req, res) => {
         return res.status(400).json({ success: false, message: e.message });
       }
     }
+    if (resolvedRoleId) {
+      const role = await Role.findByPk(resolvedRoleId);
+      if (role && role.hospital_id !== hospitalId) {
+        return res.status(400).json({ success: false, message: "Role must belong to your hospital" });
+      }
+    }
     let normalizedPhone = null;
-    try {
-      normalizedPhone = normalizeKenyanPhone(phone);
-    } catch (e) {
-      return res.status(400).json({ success: false, message: e.message });
+    if (phone) {
+      try {
+        normalizedPhone = normalizeKenyanPhone(phone);
+      } catch (e) {
+        return res.status(400).json({ success: false, message: e.message });
+      }
     }
     const created = await User.create({
       full_name,
@@ -92,6 +105,7 @@ const create = async (req, res) => {
       phone: normalizedPhone,
       password: hashedPassword,
       role_id: resolvedRoleId,
+      hospital_id: hospitalId,
       status: status ?? "active",
       last_login: null,
     });
@@ -114,6 +128,10 @@ const getAll = async (req, res) => {
     const excludeStaff = String(req.query.exclude_staff || "").toLowerCase() === "true";
 
     const where = {};
+    if (req.user?.hospital_id != null) {
+      where.hospital_id = req.user.hospital_id;
+    }
+
     if (search) {
       where[Op.or] = [
         { full_name: { [Op.iLike]: `%${search}%` } },
@@ -162,6 +180,9 @@ const getById = async (req, res) => {
         .status(404)
         .json({ success: false, message: "User not found" });
     }
+    if (req.user?.hospital_id != null && user.hospital_id !== req.user.hospital_id) {
+      return res.status(403).json({ success: false, message: "Access denied to this user" });
+    }
     return res.status(200).json({ success: true, data: sanitizeUser(user) });
   } catch (error) {
     return res.status(500).json({
@@ -180,6 +201,9 @@ const update = async (req, res) => {
       return res
         .status(404)
         .json({ success: false, message: "User not found" });
+    }
+    if (req.user?.hospital_id != null && user.hospital_id !== req.user.hospital_id) {
+      return res.status(403).json({ success: false, message: "Access denied to this user" });
     }
 
     const updates = { ...req.body };
@@ -230,6 +254,9 @@ const remove = async (req, res) => {
       return res
         .status(404)
         .json({ success: false, message: "User not found" });
+    }
+    if (req.user?.hospital_id != null && user.hospital_id !== req.user.hospital_id) {
+      return res.status(403).json({ success: false, message: "Access denied to this user" });
     }
     await user.destroy();
     await auditLog(req, { action: "DELETE_USER", table_name: "User", record_id: id });

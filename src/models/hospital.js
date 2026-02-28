@@ -30,11 +30,16 @@ module.exports = (sequelize) => {
         type: DataTypes.STRING(500),
         allowNull: true,
       },
+      subscription_package: {
+        type: DataTypes.ENUM("silver", "gold"),
+        allowNull: false,
+        defaultValue: "silver",
+      },
     },
     {
       tableName: "hospitals",
       timestamps: true,
-      indexes: [{ fields: ["name"] }],
+      indexes: [{ fields: ["name"] }, { fields: ["subscription_package"] }],
     }
   );
 

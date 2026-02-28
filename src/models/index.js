@@ -228,6 +228,12 @@ const setupAssociations = () => {
     Role.hasMany(User, { foreignKey: "role_id", as: "users" });
     User.belongsTo(Role, { foreignKey: "role_id", as: "role" });
 
+    Hospital.hasMany(User, { foreignKey: "hospital_id", as: "users" });
+    User.belongsTo(Hospital, { foreignKey: "hospital_id", as: "hospital" });
+
+    Hospital.hasMany(Role, { foreignKey: "hospital_id", as: "roles" });
+    Role.belongsTo(Hospital, { foreignKey: "hospital_id", as: "hospital" });
+
     Role.belongsToMany(Permission, {
       through: RolePermission,
       foreignKey: "role_id",

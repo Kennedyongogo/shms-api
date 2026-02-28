@@ -12,13 +12,20 @@ module.exports = (sequelize) => {
       name: {
         type: DataTypes.STRING(50),
         allowNull: false,
-        unique: true,
+      },
+      hospital_id: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: { model: "hospitals", key: "id" },
       },
     },
     {
       tableName: "roles",
       timestamps: true,
-      indexes: [{ unique: true, fields: ["name"] }],
+      indexes: [
+        { unique: true, fields: ["name", "hospital_id"] },
+        { fields: ["hospital_id"] },
+      ],
     }
   );
 

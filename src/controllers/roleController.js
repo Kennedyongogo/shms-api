@@ -1,5 +1,7 @@
+const { Op } = require("sequelize");
 const { Role, Permission, User, RoleMenuItem } = require("../models");
 const { createCrudController } = require("../utils/crudControllerFactory");
+const { parsePagination } = require("../utils/crudControllerFactory");
 const { auditLog } = require("../utils/auditLog");
 const { getMenuItemsForRole } = require("../utils/menuItems");
 const { ALL_MENU_KEYS, isValidMenuKey } = require("../constants/menuKeys");
@@ -9,6 +11,83 @@ const crud = createCrudController({
   name: "Role",
   searchableFields: ["name"],
 });
+
+const scopeByHospital = (req) => {
+  const hid = req.user?.hospital_id;
+  return hid != null ? { hospital_id: hid } : { hospital_id: { [Op.is]: null } };
+};
+
+const getAll = async (req, res) => {
+  try {
+    const { page, limit, offset } = parsePagination(req.query);
+    const search = String(req.query.search || "").trim();
+    const where = { ...scopeByHospital(req) };
+    if (search) {
+      where.name = { [Op.iLike]: `%${search}%` };
+    }
+    const { count, rows } = await Role.findAndCountAll({
+      where,
+      limit,
+      offset,
+      order: [["createdAt", "DESC"]],
+    });
+    return res.status(200).json({
+      success: true,
+      data: rows,
+      pagination: { total: count, page, limit, totalPages: Math.ceil(count / limit) },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching roles",
+      error: error.message,
+    });
+  }
+};
+
+const create = async (req, res) => {
+  try {
+    const hospitalId = req.user?.hospital_id;
+    if (hospitalId == null) {
+      return res.status(400).json({ success: false, message: "User must belong to a hospital to create roles" });
+    }
+    const { name } = req.body;
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({ success: false, message: "name is required" });
+    }
+    const created = await Role.create({
+      name: String(name).trim(),
+      hospital_id: hospitalId,
+    });
+    await auditLog(req, { action: "CREATE_ROLE", table_name: "Role", record_id: created?.id });
+    return res.status(201).json({ success: true, data: created });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Error creating Role",
+      error: error.message,
+    });
+  }
+};
+
+const getById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const role = await Role.findByPk(id);
+    if (!role) return res.status(404).json({ success: false, message: "Role not found" });
+    const scope = scopeByHospital(req);
+    if (role.hospital_id !== scope.hospital_id) {
+      return res.status(403).json({ success: false, message: "Access denied to this role" });
+    }
+    return res.status(200).json({ success: true, data: role });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching Role",
+      error: error.message,
+    });
+  }
+};
 
 const assignPermissions = async (req, res) => {
   try {
@@ -24,6 +103,10 @@ const assignPermissions = async (req, res) => {
 
     const role = await Role.findByPk(id);
     if (!role) return res.status(404).json({ success: false, message: "Role not found" });
+    const scope = scopeByHospital(req);
+    if (role.hospital_id !== scope.hospital_id) {
+      return res.status(403).json({ success: false, message: "Access denied to this role" });
+    }
 
     const permissions = await Permission.findAll({ where: { id: permission_ids } });
     await role.setPermissions(permissions);
@@ -45,9 +128,12 @@ const remove = async (req, res) => {
     const { id } = req.params;
     const role = await Role.findByPk(id);
     if (!role) return res.status(404).json({ success: false, message: "Role not found" });
-
-    if (role.name === "admin") {
-      return res.status(400).json({ success: false, message: 'Cannot delete the "admin" role' });
+    const scope = scopeByHospital(req);
+    if (role.hospital_id !== scope.hospital_id) {
+      return res.status(403).json({ success: false, message: "Access denied to this role" });
+    }
+    if (role.name === "admin" || role.name === "Super Admin") {
+      return res.status(400).json({ success: false, message: 'Cannot delete the "Super Admin" or "admin" role' });
     }
 
     const inUse = await User.count({ where: { role_id: id } });
@@ -72,6 +158,10 @@ const getMenuItems = async (req, res) => {
     const { id } = req.params;
     const role = await Role.findByPk(id);
     if (!role) return res.status(404).json({ success: false, message: "Role not found" });
+    const scope = scopeByHospital(req);
+    if (role.hospital_id !== scope.hospital_id) {
+      return res.status(403).json({ success: false, message: "Access denied to this role" });
+    }
     const menuKeys = await getMenuItemsForRole(role.id, role.name);
     return res.status(200).json({
       success: true,
@@ -95,10 +185,14 @@ const putMenuItems = async (req, res) => {
     }
     const role = await Role.findByPk(id);
     if (!role) return res.status(404).json({ success: false, message: "Role not found" });
-    if (role.name === "admin") {
+    const scope = scopeByHospital(req);
+    if (role.hospital_id !== scope.hospital_id) {
+      return res.status(403).json({ success: false, message: "Access denied to this role" });
+    }
+    if (role.name === "admin" || role.name === "Super Admin") {
       return res.status(400).json({
         success: false,
-        message: "Cannot change menu items for the admin role; admin always sees all items.",
+        message: "Cannot change menu items for Super Admin or admin; they always see all items (filtered by package).",
       });
     }
     const valid = menuKeys.filter((k) => isValidMenuKey(k));
@@ -125,5 +219,32 @@ const putMenuItems = async (req, res) => {
   }
 };
 
-module.exports = { ...crud, remove, assignPermissions, getMenuItems, putMenuItems };
+const update = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const role = await Role.findByPk(id);
+    if (!role) return res.status(404).json({ success: false, message: "Role not found" });
+    const scope = scopeByHospital(req);
+    if (role.hospital_id !== scope.hospital_id) {
+      return res.status(403).json({ success: false, message: "Access denied to this role" });
+    }
+    const { name } = req.body;
+    const updates = {};
+    if (name != null && String(name).trim()) updates.name = String(name).trim();
+    if (Object.keys(updates).length === 0) {
+      return res.status(200).json({ success: true, data: role });
+    }
+    await role.update(updates);
+    await auditLog(req, { action: "UPDATE_ROLE", table_name: "Role", record_id: id });
+    return res.status(200).json({ success: true, data: role });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Error updating Role",
+      error: error.message,
+    });
+  }
+};
+
+module.exports = { ...crud, getAll, create, getById, update, remove, assignPermissions, getMenuItems, putMenuItems };
 

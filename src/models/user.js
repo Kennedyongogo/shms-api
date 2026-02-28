@@ -36,6 +36,11 @@ module.exports = (sequelize) => {
         allowNull: false,
         references: { model: "roles", key: "id" },
       },
+      hospital_id: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: { model: "hospitals", key: "id" },
+      },
       status: {
         type: DataTypes.ENUM("active", "inactive", "suspended"),
         allowNull: false,
@@ -52,6 +57,7 @@ module.exports = (sequelize) => {
       indexes: [
         { unique: true, fields: ["email"] },
         { fields: ["role_id"] },
+        { fields: ["hospital_id"] },
         { fields: ["status"] },
       ],
     }
