@@ -3,6 +3,7 @@ const { Payment, Bill, Appointment, BillItem, Patient, User, sequelize } = requi
 const { parsePagination } = require("../utils/crudControllerFactory");
 const { auditLog } = require("../utils/auditLog");
 const { getReceiptData } = require("./receiptController");
+const { getHospitalId } = require("../utils/hospitalScope");
 
 /** When a bill becomes paid, confirm any appointment(s) it paid for. */
 async function confirmAppointmentIfBillPaid(bill) {
@@ -34,8 +35,11 @@ const processPayment = async (req, res) => {
       return res.status(400).json({ success: false, message: "bill_id and payment_method are required" });
     }
 
-    const bill = await Bill.findByPk(bill_id);
+    const bill = await Bill.findByPk(bill_id, { include: [{ model: Patient, as: "patient", attributes: ["hospital_id"] }] });
     if (!bill) return res.status(404).json({ success: false, message: "Bill not found" });
+    const hid = getHospitalId(req);
+    if (hid != null && bill.patient?.hospital_id !== hid)
+      return res.status(403).json({ success: false, message: "Bill does not belong to your hospital." });
 
     // Admission bills: do not allow payment until billing is generated (total set)
     const admissionItem = await BillItem.findOne({
@@ -116,22 +120,22 @@ const listPayments = async (req, res) => {
       where.bill_id = search.trim();
     }
 
-    const patientWhere = search && !uuidLike
-      ? {
-          [Op.or]: [
-            { full_name: { [Op.iLike]: `%${search}%` } },
-            { email: { [Op.iLike]: `%${search}%` } },
-            { phone: { [Op.iLike]: `%${search}%` } },
-          ],
-        }
-      : undefined;
+    const hid = getHospitalId(req);
+    const patientWhere = { ...(hid ? { hospital_id: hid } : {}) };
+    if (search && !uuidLike) {
+      patientWhere[Op.or] = [
+        { full_name: { [Op.iLike]: `%${search}%` } },
+        { email: { [Op.iLike]: `%${search}%` } },
+        { phone: { [Op.iLike]: `%${search}%` } },
+      ];
+    }
 
     const billInclude = [
       {
         model: Patient,
         as: "patient",
         required: true,
-        where: patientWhere,
+        where: Object.keys(patientWhere).length ? patientWhere : undefined,
         attributes: { exclude: ["password"] },
         include: [{ model: User, as: "user", attributes: ["id", "full_name", "email", "phone"], required: false }],
       },
@@ -219,6 +223,9 @@ const getPaymentById = async (req, res) => {
       ],
     });
     if (!payment) return res.status(404).json({ success: false, message: "Payment not found" });
+    const hid = getHospitalId(req);
+    if (hid != null && payment.bill?.patient?.hospital_id !== hid)
+      return res.status(404).json({ success: false, message: "Payment not found" });
     return res.status(200).json({ success: true, data: payment });
   } catch (error) {
     return res.status(500).json({ success: false, message: "Error fetching payment", error: error.message });

@@ -1,10 +1,10 @@
 const { Op } = require("sequelize");
-const { Role, Permission, User, RoleMenuItem } = require("../models");
+const { Role, Permission, User, RoleMenuItem, Hospital } = require("../models");
 const { createCrudController } = require("../utils/crudControllerFactory");
 const { parsePagination } = require("../utils/crudControllerFactory");
 const { auditLog } = require("../utils/auditLog");
 const { getMenuItemsForRole } = require("../utils/menuItems");
-const { ALL_MENU_KEYS, isValidMenuKey } = require("../constants/menuKeys");
+const { ALL_MENU_KEYS, PACKAGE_KEYS, isValidMenuKey } = require("../constants/menuKeys");
 
 const crud = createCrudController({
   Model: Role,
@@ -162,10 +162,19 @@ const getMenuItems = async (req, res) => {
     if (role.hospital_id !== scope.hospital_id) {
       return res.status(403).json({ success: false, message: "Access denied to this role" });
     }
-    const menuKeys = await getMenuItemsForRole(role.id, role.name);
+    let menuKeys = await getMenuItemsForRole(role.id, role.name);
+    // Only show menu items that are in this hospital's subscription package
+    let allMenuKeys = ALL_MENU_KEYS;
+    if (role.hospital_id) {
+      const hospital = await Hospital.findByPk(role.hospital_id, { attributes: ["subscription_package"] });
+      const pkg = hospital?.subscription_package;
+      if (pkg && PACKAGE_KEYS[pkg]) allMenuKeys = PACKAGE_KEYS[pkg];
+    }
+    const allowedSet = new Set(allMenuKeys);
+    menuKeys = menuKeys.filter((k) => allowedSet.has(k));
     return res.status(200).json({
       success: true,
-      data: { menuKeys, allMenuKeys: ALL_MENU_KEYS },
+      data: { menuKeys, allMenuKeys },
     });
   } catch (error) {
     return res.status(500).json({
@@ -195,12 +204,20 @@ const putMenuItems = async (req, res) => {
         message: "Cannot change menu items for Super Admin or admin; they always see all items (filtered by package).",
       });
     }
-    const valid = menuKeys.filter((k) => isValidMenuKey(k));
-    const invalid = menuKeys.filter((k) => !isValidMenuKey(k));
+    // Only allow keys that are in this hospital's subscription package
+    let allowedKeys = ALL_MENU_KEYS;
+    if (role.hospital_id) {
+      const hospital = await Hospital.findByPk(role.hospital_id, { attributes: ["subscription_package"] });
+      const pkg = hospital?.subscription_package;
+      if (pkg && PACKAGE_KEYS[pkg]) allowedKeys = PACKAGE_KEYS[pkg];
+    }
+    const allowedSet = new Set(allowedKeys);
+    const valid = menuKeys.filter((k) => isValidMenuKey(k) && allowedSet.has(k));
+    const invalid = menuKeys.filter((k) => !isValidMenuKey(k) || !allowedSet.has(k));
     if (invalid.length > 0) {
       return res.status(400).json({
         success: false,
-        message: `Invalid menu key(s): ${invalid.join(", ")}. Valid keys: ${ALL_MENU_KEYS.join(", ")}`,
+        message: `Invalid or not in your package: ${invalid.join(", ")}. Allowed for your plan: ${allowedKeys.join(", ")}`,
       });
     }
     await RoleMenuItem.destroy({ where: { role_id: id } });

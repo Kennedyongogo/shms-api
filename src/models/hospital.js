@@ -35,6 +35,11 @@ module.exports = (sequelize) => {
         allowNull: false,
         defaultValue: "silver",
       },
+      primary_color: {
+        type: DataTypes.STRING(20),
+        allowNull: true,
+        defaultValue: "#00897B",
+      },
     },
     {
       tableName: "hospitals",

@@ -1,5 +1,6 @@
 const { AuditLog, User } = require("../models");
 const { parsePagination } = require("../utils/crudControllerFactory");
+const { getHospitalId } = require("../utils/hospitalScope");
 
 const viewLogs = async (req, res) => {
   try {
@@ -10,12 +11,21 @@ const viewLogs = async (req, res) => {
     if (table_name) where.table_name = table_name;
     if (action) where.action = action;
 
+    const hid = getHospitalId(req);
+    const userInclude = {
+      model: User,
+      as: "user",
+      attributes: ["id", "full_name", "email", "hospital_id"],
+      required: hid != null,
+      ...(hid != null ? { where: { hospital_id: hid } } : {}),
+    };
+
     const { count, rows } = await AuditLog.findAndCountAll({
       where,
       limit,
       offset,
       order: [["timestamp", "DESC"]],
-      include: [{ model: User, as: "user", attributes: ["id", "full_name", "email"], required: false }],
+      include: [userInclude],
     });
     return res.status(200).json({
       success: true,
@@ -31,11 +41,14 @@ const viewOneLog = async (req, res) => {
   try {
     const { id } = req.params;
     const log = await AuditLog.findByPk(id, {
-      include: [{ model: User, as: "user", attributes: ["id", "full_name", "email"], required: false }],
+      include: [{ model: User, as: "user", attributes: ["id", "full_name", "email", "hospital_id"], required: false }],
     });
     if (!log) {
       return res.status(404).json({ success: false, message: "Audit log not found" });
     }
+    const hid = getHospitalId(req);
+    if (hid != null && log.user?.hospital_id !== hid)
+      return res.status(404).json({ success: false, message: "Audit log not found" });
     return res.status(200).json({ success: true, data: log });
   } catch (error) {
     return res.status(500).json({ success: false, message: "Error fetching audit log", error: error.message });

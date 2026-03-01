@@ -2,6 +2,7 @@ const { Op } = require("sequelize");
 const { Service, Hospital, Department } = require("../models");
 const { toRelativeUploadPath } = require("../middleware/upload");
 const { createCrudController, parsePagination } = require("../utils/crudControllerFactory");
+const { scopeByHospital, belongsToUserHospital, withHospitalId } = require("../utils/hospitalScope");
 
 const withImagePath = (req) => {
   const body = { ...req.body };
@@ -30,8 +31,8 @@ const getAll = async (req, res) => {
     const { page, limit, offset } = parsePagination(req.query);
     const { search, hospital_id, department_id, status } = req.query;
 
-    const where = {};
-    if (hospital_id) where.hospital_id = hospital_id;
+    const where = { ...scopeByHospital(req) };
+    if (hospital_id && where.hospital_id == null) where.hospital_id = hospital_id;
     if (department_id) where.department_id = department_id;
     if (status) where.status = status;
 
@@ -61,5 +62,46 @@ const getAll = async (req, res) => {
   }
 };
 
-module.exports = { ...crud, getAll };
+const getByIdScoped = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const record = await Service.findByPk(id, { include });
+    if (!record) return res.status(404).json({ success: false, message: "Service not found" });
+    if (!belongsToUserHospital(record, req)) return res.status(404).json({ success: false, message: "Service not found" });
+    return res.status(200).json({ success: true, data: record });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: "Error fetching Service", error: error.message });
+  }
+};
+
+const update = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const record = await Service.findByPk(id);
+    if (!record) return res.status(404).json({ success: false, message: "Service not found" });
+    if (!belongsToUserHospital(record, req)) return res.status(403).json({ success: false, message: "Access denied" });
+    return crud.update(req, res);
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const remove = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const record = await Service.findByPk(id);
+    if (!record) return res.status(404).json({ success: false, message: "Service not found" });
+    if (!belongsToUserHospital(record, req)) return res.status(403).json({ success: false, message: "Access denied" });
+    return crud.remove(req, res);
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const create = async (req, res) => {
+  req.body = withHospitalId(req.body || {}, req);
+  return crud.create(req, res);
+};
+
+module.exports = { ...crud, getAll, getById: getByIdScoped, update, remove, create };
 

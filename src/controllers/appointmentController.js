@@ -25,6 +25,7 @@ const {
 const { parsePagination } = require("../utils/crudControllerFactory");
 const { requirePaidByReferenceOrRespond } = require("../utils/paymentGate");
 const { auditLog } = require("../utils/auditLog");
+const { getHospitalId } = require("../utils/hospitalScope");
 
 const bookAppointment = async (req, res) => {
   try {
@@ -45,6 +46,18 @@ const bookAppointment = async (req, res) => {
         success: false,
         message: "bill_amount must be a valid number >= 0",
       });
+    }
+
+    const hid = getHospitalId(req);
+    if (hid != null) {
+      const [patient, doctor] = await Promise.all([
+        Patient.findByPk(patient_id, { attributes: ["id", "hospital_id"] }),
+        Staff.findByPk(doctor_id, { attributes: ["id", "hospital_id"] }),
+      ]);
+      if (!patient || patient.hospital_id !== hid)
+        return res.status(403).json({ success: false, message: "Patient does not belong to your hospital." });
+      if (!doctor || doctor.hospital_id !== hid)
+        return res.status(403).json({ success: false, message: "Doctor does not belong to your hospital." });
     }
 
     const appt = await Appointment.create({
@@ -98,11 +111,15 @@ const bookAppointment = async (req, res) => {
 
 const updateStatus = async (req, res, status) => {
   const { id } = req.params;
-  const appt = await Appointment.findByPk(id);
+  const appt = await Appointment.findByPk(id, {
+    include: [{ model: Patient, as: "patient", attributes: ["hospital_id"] }],
+  });
   if (!appt)
     return res
       .status(404)
       .json({ success: false, message: "Appointment not found" });
+  if (!ensureAppointmentBelongsToHospital(appt, req))
+    return res.status(404).json({ success: false, message: "Appointment not found" });
 
   if (status === "confirmed" || status === "completed") {
     const ok = await requirePaidByReferenceOrRespond(res, {
@@ -161,11 +178,15 @@ const setStatus = async (req, res) => {
         });
     }
 
-    const appt = await Appointment.findByPk(id);
+    const appt = await Appointment.findByPk(id, {
+      include: [{ model: Patient, as: "patient", attributes: ["hospital_id"] }],
+    });
     if (!appt)
       return res
         .status(404)
         .json({ success: false, message: "Appointment not found" });
+    if (!ensureAppointmentBelongsToHospital(appt, req))
+      return res.status(404).json({ success: false, message: "Appointment not found" });
 
     const current = appt.status;
     if (current === "completed" || current === "cancelled") {
@@ -257,6 +278,12 @@ const setStatus = async (req, res) => {
 const listByDoctor = async (req, res) => {
   try {
     const { doctor_id } = req.params;
+    const hid = getHospitalId(req);
+    if (hid != null) {
+      const doctor = await Staff.findByPk(doctor_id, { attributes: ["id", "hospital_id"] });
+      if (!doctor || doctor.hospital_id !== hid)
+        return res.status(200).json({ success: true, data: [], pagination: { total: 0, page: 1, limit: parseInt(req.query.limit, 10) || 10, totalPages: 0 } });
+    }
     const { page, limit, offset } = parsePagination(req.query);
     const { count, rows } = await Appointment.findAndCountAll({
       where: { doctor_id },
@@ -288,6 +315,12 @@ const listByDoctor = async (req, res) => {
 const listByPatient = async (req, res) => {
   try {
     const { patient_id } = req.params;
+    const hid = getHospitalId(req);
+    if (hid != null) {
+      const patient = await Patient.findByPk(patient_id, { attributes: ["id", "hospital_id"] });
+      if (!patient || patient.hospital_id !== hid)
+        return res.status(200).json({ success: true, data: [], pagination: { total: 0, page: 1, limit: parseInt(req.query.limit, 10) || 10, totalPages: 0 } });
+    }
     const { page, limit, offset } = parsePagination(req.query);
     const { count, rows } = await Appointment.findAndCountAll({
       where: { patient_id },
@@ -334,14 +367,15 @@ const listAll = async (req, res) => {
             { phone: { [Op.iLike]: `%${search}%` } },
           ],
         }
-      : undefined;
+      : {};
+    if (req.user?.hospital_id) patientWhere.hospital_id = req.user.hospital_id;
 
     const include = [
       {
         model: Patient,
         as: "patient",
         required: true,
-        where: patientWhere,
+        where: Object.keys(patientWhere).length ? patientWhere : undefined,
         attributes: { exclude: ["password"] },
         include: [
           {
@@ -408,6 +442,13 @@ const listAll = async (req, res) => {
   }
 };
 
+const ensureAppointmentBelongsToHospital = (appointment, req) => {
+  if (!req.user?.hospital_id) return true;
+  const patientHospitalId = appointment?.patient?.hospital_id ?? appointment?.Patient?.hospital_id;
+  const doctorHospitalId = appointment?.doctor?.hospital_id ?? appointment?.Doctor?.hospital_id;
+  return patientHospitalId === req.user.hospital_id || doctorHospitalId === req.user.hospital_id;
+};
+
 const getById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -455,6 +496,8 @@ const getById = async (req, res) => {
       return res
         .status(404)
         .json({ success: false, message: "Appointment not found" });
+    if (!ensureAppointmentBelongsToHospital(appointment, req))
+      return res.status(404).json({ success: false, message: "Appointment not found" });
     return res.status(200).json({ success: true, data: appointment });
   } catch (error) {
     return res
@@ -470,11 +513,18 @@ const getById = async (req, res) => {
 const remove = async (req, res) => {
   try {
     const { id } = req.params;
-    const appt = await Appointment.findByPk(id);
+    const appt = await Appointment.findByPk(id, {
+      include: [
+        { model: Patient, as: "patient", attributes: ["hospital_id"] },
+        { model: Staff, as: "doctor", attributes: ["hospital_id"] },
+      ],
+    });
     if (!appt)
       return res
         .status(404)
         .json({ success: false, message: "Appointment not found" });
+    if (!ensureAppointmentBelongsToHospital(appt, req))
+      return res.status(403).json({ success: false, message: "Access denied" });
 
     const appointmentId = appt.id;
     const deleted = {

@@ -1,6 +1,8 @@
+const { Op } = require("sequelize");
 const { Event, EventImage } = require("../models");
-const { createCrudController } = require("../utils/crudControllerFactory");
+const { createCrudController, parsePagination } = require("../utils/crudControllerFactory");
 const { toRelativeUploadPath } = require("../middleware/upload");
+const { scopeByHospital, belongsToUserHospital, withHospitalId } = require("../utils/hospitalScope");
 
 const withBannerPath = (req) => {
   const body = { ...req.body };
@@ -16,11 +18,79 @@ const crud = createCrudController({
   buildUpdateData: withBannerPath,
 });
 
+const getAll = async (req, res) => {
+  try {
+    const { page, limit, offset } = parsePagination(req.query);
+    const { search } = req.query;
+    const where = { ...scopeByHospital(req) };
+    if (search) {
+      where[Op.or] = [
+        { title: { [Op.iLike]: `%${search}%` } },
+        { slug: { [Op.iLike]: `%${search}%` } },
+        { description: { [Op.iLike]: `%${search}%` } },
+        { location: { [Op.iLike]: `%${search}%` } },
+        { status: { [Op.iLike]: `%${search}%` } },
+      ];
+    }
+    const { count, rows } = await Event.findAndCountAll({ where, limit, offset, order: [["createdAt", "DESC"]] });
+    return res.status(200).json({
+      success: true,
+      data: rows,
+      pagination: { total: count, page, limit, totalPages: Math.ceil(count / limit) },
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: "Error fetching Events", error: error.message });
+  }
+};
+
+const getByIdScoped = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const record = await Event.findByPk(id);
+    if (!record) return res.status(404).json({ success: false, message: "Event not found" });
+    if (!belongsToUserHospital(record, req)) return res.status(404).json({ success: false, message: "Event not found" });
+    return res.status(200).json({ success: true, data: record });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: "Error fetching Event", error: error.message });
+  }
+};
+
+const update = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const record = await Event.findByPk(id);
+    if (!record) return res.status(404).json({ success: false, message: "Event not found" });
+    if (!belongsToUserHospital(record, req)) return res.status(403).json({ success: false, message: "Access denied" });
+    return crud.update(req, res);
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const remove = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const record = await Event.findByPk(id);
+    if (!record) return res.status(404).json({ success: false, message: "Event not found" });
+    if (!belongsToUserHospital(record, req)) return res.status(403).json({ success: false, message: "Access denied" });
+    return crud.remove(req, res);
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const create = async (req, res) => {
+  req.body = withBannerPath(req);
+  req.body = withHospitalId(req.body || {}, req);
+  return crud.create(req, res);
+};
+
 const publish = async (req, res) => {
   try {
     const { id } = req.params;
     const event = await Event.findByPk(id);
     if (!event) return res.status(404).json({ success: false, message: "Event not found" });
+    if (!belongsToUserHospital(event, req)) return res.status(403).json({ success: false, message: "Access denied" });
     const updated = await event.update({ status: "published" });
     return res.status(200).json({ success: true, data: updated });
   } catch (error) {
@@ -30,9 +100,10 @@ const publish = async (req, res) => {
 
 const addEventImage = async (req, res) => {
   try {
-    const { id } = req.params; // event id
+    const { id } = req.params;
     const event = await Event.findByPk(id);
     if (!event) return res.status(404).json({ success: false, message: "Event not found" });
+    if (!belongsToUserHospital(event, req)) return res.status(403).json({ success: false, message: "Access denied" });
 
     if (!req.file?.path) {
       return res.status(400).json({ success: false, message: "event_image file is required" });
@@ -51,5 +122,5 @@ const addEventImage = async (req, res) => {
   }
 };
 
-module.exports = { ...crud, publish, addEventImage };
+module.exports = { ...crud, getAll, getById: getByIdScoped, update, remove, create, publish, addEventImage };
 

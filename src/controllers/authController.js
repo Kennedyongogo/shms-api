@@ -170,7 +170,7 @@ const registerOrganization = async (req, res) => {
       data: {
         user: sanitizeUser(user),
         role,
-        hospital: { id: hospital.id, name: hospital.name, subscription_package: hospital.subscription_package },
+        hospital: { id: hospital.id, name: hospital.name, subscription_package: hospital.subscription_package, primary_color: hospital.primary_color },
         token,
         menuItems,
       },
@@ -240,7 +240,6 @@ const login = async (req, res) => {
 
     const user = await User.findOne({
       where: { email: String(email).toLowerCase().trim() },
-      include: [{ association: "hospital", required: false }],
     });
     if (!user) return res.status(401).json({ success: false, message: "Invalid credentials" });
 
@@ -255,10 +254,28 @@ const login = async (req, res) => {
     const token = jwt.sign({ id: user.id, type: "user" }, config.jwtSecret, { expiresIn: "7d" });
     const role = await Role.findByPk(user.role_id);
     let menuItems = await getMenuItemsForRole(role?.id, role?.name);
-    const hospital = user.hospital || (user.hospital_id ? await Hospital.findByPk(user.hospital_id) : null);
+
+    let hospital = null;
+    if (user.hospital_id) {
+      try {
+        hospital = await Hospital.findByPk(user.hospital_id);
+      } catch (err) {
+        console.error("[login] Hospital fetch failed (e.g. missing column?):", err.message);
+      }
+    }
     if (hospital && hospital.subscription_package) {
       menuItems = filterMenuItemsByPackage(menuItems, hospital.subscription_package);
     }
+
+    const hospitalPayload = hospital
+      ? {
+          id: hospital.id,
+          name: hospital.name,
+          subscription_package: hospital.subscription_package || "silver",
+          primary_color: hospital.primary_color ?? "#00897B",
+        }
+      : null;
+
     await auditLog({ user: { id: user.id } }, { action: "LOGIN", table_name: "auth" });
     return res.status(200).json({
       success: true,
@@ -267,11 +284,16 @@ const login = async (req, res) => {
         role,
         token,
         menuItems,
-        hospital: hospital ? { id: hospital.id, name: hospital.name, subscription_package: hospital.subscription_package } : null,
+        hospital: hospitalPayload,
       },
     });
   } catch (error) {
-    return res.status(500).json({ success: false, message: "Error logging in", error: error.message });
+    console.error("[login] 500:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Error logging in",
+      error: error.message,
+    });
   }
 };
 
@@ -350,7 +372,7 @@ const me = async (req, res) => {
         user: sanitizeUser(user),
         role: role || null,
         menuItems,
-        hospital: hospital ? { id: hospital.id, name: hospital.name, subscription_package: hospital.subscription_package } : null,
+        hospital: hospital ? { id: hospital.id, name: hospital.name, subscription_package: hospital.subscription_package, primary_color: hospital.primary_color } : null,
       },
     });
   } catch (error) {

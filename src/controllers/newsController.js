@@ -1,6 +1,8 @@
+const { Op } = require("sequelize");
 const { News, NewsImage } = require("../models");
-const { createCrudController } = require("../utils/crudControllerFactory");
+const { createCrudController, parsePagination } = require("../utils/crudControllerFactory");
 const { toRelativeUploadPath } = require("../middleware/upload");
+const { scopeByHospital, belongsToUserHospital, withHospitalId } = require("../utils/hospitalScope");
 
 const withFeaturedPath = (req) => {
   const body = { ...req.body };
@@ -16,11 +18,79 @@ const crud = createCrudController({
   buildUpdateData: withFeaturedPath,
 });
 
+const getAll = async (req, res) => {
+  try {
+    const { page, limit, offset } = parsePagination(req.query);
+    const { search } = req.query;
+    const where = { ...scopeByHospital(req) };
+    if (search) {
+      where[Op.or] = [
+        { title: { [Op.iLike]: `%${search}%` } },
+        { slug: { [Op.iLike]: `%${search}%` } },
+        { content: { [Op.iLike]: `%${search}%` } },
+        { category: { [Op.iLike]: `%${search}%` } },
+        { status: { [Op.iLike]: `%${search}%` } },
+      ];
+    }
+    const { count, rows } = await News.findAndCountAll({ where, limit, offset, order: [["createdAt", "DESC"]] });
+    return res.status(200).json({
+      success: true,
+      data: rows,
+      pagination: { total: count, page, limit, totalPages: Math.ceil(count / limit) },
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: "Error fetching News", error: error.message });
+  }
+};
+
+const getByIdScoped = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const record = await News.findByPk(id);
+    if (!record) return res.status(404).json({ success: false, message: "News not found" });
+    if (!belongsToUserHospital(record, req)) return res.status(404).json({ success: false, message: "News not found" });
+    return res.status(200).json({ success: true, data: record });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: "Error fetching News", error: error.message });
+  }
+};
+
+const update = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const record = await News.findByPk(id);
+    if (!record) return res.status(404).json({ success: false, message: "News not found" });
+    if (!belongsToUserHospital(record, req)) return res.status(403).json({ success: false, message: "Access denied" });
+    return crud.update(req, res);
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const remove = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const record = await News.findByPk(id);
+    if (!record) return res.status(404).json({ success: false, message: "News not found" });
+    if (!belongsToUserHospital(record, req)) return res.status(403).json({ success: false, message: "Access denied" });
+    return crud.remove(req, res);
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const create = async (req, res) => {
+  req.body = withFeaturedPath(req);
+  req.body = withHospitalId(req.body || {}, req);
+  return crud.create(req, res);
+};
+
 const publish = async (req, res) => {
   try {
     const { id } = req.params;
     const news = await News.findByPk(id);
     if (!news) return res.status(404).json({ success: false, message: "News not found" });
+    if (!belongsToUserHospital(news, req)) return res.status(403).json({ success: false, message: "Access denied" });
     const updated = await news.update({ status: "published", published_at: new Date() });
     return res.status(200).json({ success: true, data: updated });
   } catch (error) {
@@ -42,9 +112,10 @@ const archive = async (req, res) => {
 
 const addNewsImage = async (req, res) => {
   try {
-    const { id } = req.params; // news id
+    const { id } = req.params;
     const news = await News.findByPk(id);
     if (!news) return res.status(404).json({ success: false, message: "News not found" });
+    if (!belongsToUserHospital(news, req)) return res.status(403).json({ success: false, message: "Access denied" });
 
     if (!req.file?.path) {
       return res.status(400).json({ success: false, message: "news_image file is required" });
@@ -63,5 +134,5 @@ const addNewsImage = async (req, res) => {
   }
 };
 
-module.exports = { ...crud, publish, archive, addNewsImage };
+module.exports = { ...crud, getAll, getById: getByIdScoped, update, remove, create, publish, archive, addNewsImage };
 

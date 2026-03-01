@@ -142,7 +142,7 @@ app.use("/api/notifications", authenticateUser, notificationRoutes);
 app.use("/api/reports", authenticateUser, reportRoutes);
 app.use("/api/audit-logs", authenticateUser, auditRoutes);
 app.use("/api/statistics", authenticateUser, statisticsRoutes);
-app.use("/api/settings", authenticateUser, requireRoles(["admin"]), settingsRoutes);
+app.use("/api/settings", authenticateUser, requireRoles(["admin", "Super Admin"]), settingsRoutes);
 
 console.log("✅ All API routes registered");
 

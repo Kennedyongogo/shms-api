@@ -3,6 +3,7 @@ const bcrypt = require("bcryptjs");
 const { Patient, User, Hospital } = require("../models");
 const { createCrudController, parsePagination } = require("../utils/crudControllerFactory");
 const { auditLog } = require("../utils/auditLog");
+const { scopeByHospital, belongsToUserHospital, withHospitalId } = require("../utils/hospitalScope");
 
 const sanitizePatient = (p) => {
   if (!p) return p;
@@ -79,7 +80,7 @@ const normalizePatientSource = (val) => {
 // Override create/update to support patient-portal credentials on Patient model
 const create = async (req, res) => {
   try {
-    const body = { ...req.body };
+    const body = withHospitalId({ ...req.body }, req);
     if (!body.hospital_id) {
       return res.status(400).json({ success: false, message: "hospital_id is required" });
     }
@@ -138,6 +139,7 @@ const update = async (req, res) => {
     const { id } = req.params;
     const record = await Patient.findByPk(id);
     if (!record) return res.status(404).json({ success: false, message: "Patient not found" });
+    if (!belongsToUserHospital(record, req)) return res.status(404).json({ success: false, message: "Patient not found" });
 
     const updates = { ...req.body };
     if (Object.prototype.hasOwnProperty.call(updates, "phone")) {
@@ -193,14 +195,14 @@ const update = async (req, res) => {
   }
 };
 
-// Enhanced listing: supports search across linked user (name/email/phone) and patient fields
+// Enhanced listing: supports search across linked user (name/email/phone) and patient fields; scoped to user's hospital
 const getAll = async (req, res) => {
   try {
     const { page, limit, offset } = parsePagination(req.query);
     const { search, hospital_id } = req.query;
 
-    const where = {};
-    if (hospital_id) where.hospital_id = hospital_id;
+    const where = { ...scopeByHospital(req) };
+    if (hospital_id && where.hospital_id == null) where.hospital_id = hospital_id;
 
     const patientSearchWhere = search
       ? {
@@ -257,11 +259,26 @@ const getById = async (req, res) => {
     const { id } = req.params;
     const record = await Patient.findByPk(id, { attributes: { exclude: ["password"] }, include: baseInclude });
     if (!record) return res.status(404).json({ success: false, message: "Patient not found" });
+    if (!belongsToUserHospital(record, req)) return res.status(404).json({ success: false, message: "Patient not found" });
     return res.status(200).json({ success: true, data: record });
   } catch (error) {
     return res.status(500).json({ success: false, message: "Error fetching Patient", error: error.message });
   }
 };
 
-module.exports = { ...crud, create, update, getAll, getById };
+const remove = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const record = await Patient.findByPk(id);
+    if (!record) return res.status(404).json({ success: false, message: "Patient not found" });
+    if (!belongsToUserHospital(record, req)) return res.status(404).json({ success: false, message: "Patient not found" });
+    await record.destroy();
+    await auditLog(req, { action: "DELETE_PATIENT", table_name: "patients", record_id: id });
+    return res.status(200).json({ success: true, message: "Patient deleted" });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: "Error deleting Patient", error: error.message });
+  }
+};
+
+module.exports = { ...crud, create, update, getAll, getById, remove };
 

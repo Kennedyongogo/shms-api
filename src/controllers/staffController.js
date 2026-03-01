@@ -1,6 +1,7 @@
 const { Op } = require("sequelize");
 const { Staff, User, Hospital, Department, DoctorSchedule, sequelize } = require("../models");
 const { createCrudController, parsePagination } = require("../utils/crudControllerFactory");
+const { scopeByHospital, belongsToUserHospital, withHospitalId } = require("../utils/hospitalScope");
 
 /** Parse available_at (ISO datetime) to { dayOfWeek: 0-6, timeStr: 'HH:mm' }. Returns null if invalid. */
 function parseAvailableAt(availableAt) {
@@ -37,9 +38,9 @@ const getAll = async (req, res) => {
     const { page, limit, offset } = parsePagination(req.query);
     const { search, staff_type, hospital_id, department_id, user_id, available_at } = req.query;
 
-    const where = {};
+    const where = { ...scopeByHospital(req) };
     if (staff_type) where.staff_type = staff_type;
-    if (hospital_id) where.hospital_id = hospital_id;
+    if (hospital_id && where.hospital_id == null) where.hospital_id = hospital_id;
     if (department_id) where.department_id = department_id;
     if (user_id) where.user_id = user_id;
 
@@ -127,5 +128,46 @@ const getAll = async (req, res) => {
   }
 };
 
-module.exports = { ...crud, getAll };
+const getByIdScoped = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const record = await Staff.findByPk(id, { include: baseInclude });
+    if (!record) return res.status(404).json({ success: false, message: "Staff not found" });
+    if (!belongsToUserHospital(record, req)) return res.status(404).json({ success: false, message: "Staff not found" });
+    return res.status(200).json({ success: true, data: record });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: "Error fetching Staff", error: error.message });
+  }
+};
+
+const update = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const record = await Staff.findByPk(id);
+    if (!record) return res.status(404).json({ success: false, message: "Staff not found" });
+    if (!belongsToUserHospital(record, req)) return res.status(403).json({ success: false, message: "Access denied" });
+    return crud.update(req, res);
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const remove = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const record = await Staff.findByPk(id);
+    if (!record) return res.status(404).json({ success: false, message: "Staff not found" });
+    if (!belongsToUserHospital(record, req)) return res.status(403).json({ success: false, message: "Access denied" });
+    return crud.remove(req, res);
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const create = async (req, res) => {
+  req.body = withHospitalId(req.body || {}, req);
+  return crud.create(req, res);
+};
+
+module.exports = { ...crud, getAll, getById: getByIdScoped, update, remove, create };
 

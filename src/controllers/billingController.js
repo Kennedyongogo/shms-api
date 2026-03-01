@@ -4,6 +4,7 @@ const { getBillingStatusByReference } = require("../utils/paymentGate");
 const { confirmAppointmentIfBillPaid } = require("./paymentController");
 const { parsePagination } = require("../utils/crudControllerFactory");
 const { auditLog } = require("../utils/auditLog");
+const { getHospitalId } = require("../utils/hospitalScope");
 
 const generateBill = async (req, res) => {
   try {
@@ -12,6 +13,13 @@ const generateBill = async (req, res) => {
       return res
         .status(400)
         .json({ success: false, message: "patient_id is required" });
+
+    const hid = getHospitalId(req);
+    if (hid != null) {
+      const patient = await Patient.findByPk(patient_id, { attributes: ["id", "hospital_id"] });
+      if (!patient || patient.hospital_id !== hid)
+        return res.status(403).json({ success: false, message: "Patient does not belong to your hospital." });
+    }
 
     if (consultation_id) {
       const consult = await Consultation.findByPk(consultation_id);
@@ -50,11 +58,14 @@ const addBillItems = async (req, res) => {
         .json({ success: false, message: "items array is required" });
     }
 
-    const bill = await Bill.findByPk(bill_id);
+    const bill = await Bill.findByPk(bill_id, { include: [{ model: Patient, as: "patient", attributes: ["hospital_id"] }] });
     if (!bill)
       return res
         .status(404)
         .json({ success: false, message: "Bill not found" });
+    const hid = getHospitalId(req);
+    if (hid != null && bill.patient?.hospital_id !== hid)
+      return res.status(403).json({ success: false, message: "Bill does not belong to your hospital." });
 
     const rows = items.map((i) => ({
       bill_id,
@@ -128,10 +139,13 @@ const setBillStatus = async (req, res) => {
       });
     }
 
-    const bill = await Bill.findByPk(bill_id);
+    const bill = await Bill.findByPk(bill_id, { include: [{ model: Patient, as: "patient", attributes: ["hospital_id"] }] });
     if (!bill) {
       return res.status(404).json({ success: false, message: "Bill not found" });
     }
+    const hid = getHospitalId(req);
+    if (hid != null && bill.patient?.hospital_id !== hid)
+      return res.status(403).json({ success: false, message: "Bill does not belong to your hospital." });
 
     await bill.update({ status });
     await confirmAppointmentIfBillPaid(await bill.reload());
@@ -159,22 +173,22 @@ const listBills = async (req, res) => {
     if (appointment_id) where.appointment_id = appointment_id;
     if (consultation_id) where.consultation_id = consultation_id;
 
-    const patientWhere = search
-      ? {
-          [Op.or]: [
-            { full_name: { [Op.iLike]: `%${search}%` } },
-            { email: { [Op.iLike]: `%${search}%` } },
-            { phone: { [Op.iLike]: `%${search}%` } },
-          ],
-        }
-      : undefined;
+    const hid = getHospitalId(req);
+    const patientWhere = { ...(hid ? { hospital_id: hid } : {}) };
+    if (search) {
+      patientWhere[Op.or] = [
+        { full_name: { [Op.iLike]: `%${search}%` } },
+        { email: { [Op.iLike]: `%${search}%` } },
+        { phone: { [Op.iLike]: `%${search}%` } },
+      ];
+    }
 
     const include = [
       {
         model: Patient,
         as: "patient",
         required: true,
-        where: patientWhere,
+        where: Object.keys(patientWhere).length ? patientWhere : undefined,
         attributes: { exclude: ["password"] },
         include: [{ model: User, as: "user", attributes: ["id", "full_name", "email", "phone"], required: false }],
       },
@@ -247,6 +261,9 @@ const getBillById = async (req, res) => {
       order: [["createdAt", "DESC"]],
     });
     if (!bill) return res.status(404).json({ success: false, message: "Bill not found" });
+    const hid = getHospitalId(req);
+    if (hid != null && bill.patient?.hospital_id !== hid)
+      return res.status(404).json({ success: false, message: "Bill not found" });
 
     const payments = bill.payments || [];
     const paid_amount = payments.reduce((sum, p) => sum + Number(p.amount_paid || 0), 0);

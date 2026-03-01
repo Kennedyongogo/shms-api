@@ -1,6 +1,7 @@
 const { Op } = require("sequelize");
 const { Department, Hospital } = require("../models");
 const { createCrudController, parsePagination } = require("../utils/crudControllerFactory");
+const { scopeByHospital, belongsToUserHospital, withHospitalId } = require("../utils/hospitalScope");
 
 const crud = createCrudController({
   Model: Department,
@@ -9,22 +10,19 @@ const crud = createCrudController({
   include: [{ model: Hospital, as: "hospital", attributes: ["id", "name"], required: false }],
 });
 
-// Add hospital_id filter support for listing
+// List departments: always scoped to user's hospital when req.user.hospital_id is set
 const getAll = async (req, res) => {
   try {
     const { page, limit, offset } = parsePagination(req.query);
     const { hospital_id, search } = req.query;
-    const where = {};
-    if (hospital_id) where.hospital_id = hospital_id;
+    const where = { ...scopeByHospital(req) };
+    if (hospital_id && where.hospital_id == null) where.hospital_id = hospital_id;
     if (search) {
       where[Op.or] = [
         { name: { [Op.iLike]: `%${search}%` } },
         { description: { [Op.iLike]: `%${search}%` } },
       ];
     }
-
-    // If no hospital_id, fall back to standard crud getAll (keeps search behavior)
-    if (!hospital_id) return crud.getAll(req, res);
 
     const { count, rows } = await Department.findAndCountAll({
       where,
@@ -48,5 +46,48 @@ const getAll = async (req, res) => {
   }
 };
 
-module.exports = { ...crud, getAll };
+const getByIdScoped = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const record = await Department.findByPk(id, {
+      include: [{ model: Hospital, as: "hospital", attributes: ["id", "name"], required: false }],
+    });
+    if (!record) return res.status(404).json({ success: false, message: "Department not found" });
+    if (!belongsToUserHospital(record, req)) return res.status(404).json({ success: false, message: "Department not found" });
+    return res.status(200).json({ success: true, data: record });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: "Error fetching Department", error: error.message });
+  }
+};
+
+const update = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const record = await Department.findByPk(id);
+    if (!record) return res.status(404).json({ success: false, message: "Department not found" });
+    if (!belongsToUserHospital(record, req)) return res.status(403).json({ success: false, message: "Access denied" });
+    return crud.update(req, res);
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+const remove = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const record = await Department.findByPk(id);
+    if (!record) return res.status(404).json({ success: false, message: "Department not found" });
+    if (!belongsToUserHospital(record, req)) return res.status(403).json({ success: false, message: "Access denied" });
+    return crud.remove(req, res);
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+const create = async (req, res) => {
+  req.body = withHospitalId(req.body || {}, req);
+  return crud.create(req, res);
+};
+
+module.exports = { ...crud, getAll, getById: getByIdScoped, update, remove, create };
 
