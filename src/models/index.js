@@ -162,7 +162,7 @@ const initializeModels = async () => {
     await VitalSigns.sync({ force: false, alter: false });
 
     // 7) LABORATORY MODULE
-    await LabTest.sync({ force: false, alter: false });
+    await LabTest.sync({ force: true, alter: false });
     await LabOrder.sync({ force: false, alter: false });
     await LabOrderItem.sync({ force: false, alter: false });
     await LabResult.sync({ force: false, alter: false });
@@ -182,7 +182,7 @@ const initializeModels = async () => {
 
     // 10) BILLING & FINANCE
     await Bill.sync({ force: false, alter: false });
-    await BillItem.sync({ force: false, alter: false });
+    await BillItem.sync({ force: true, alter: false });
     await Payment.sync({ force: false, alter: false });
     await InsuranceClaim.sync({ force: false, alter: false });
 
@@ -295,6 +295,42 @@ const setupAssociations = () => {
 
     Hospital.hasMany(News, { foreignKey: "hospital_id", as: "news" });
     News.belongsTo(Hospital, { foreignKey: "hospital_id", as: "hospital" });
+
+    Hospital.hasMany(Medication, { foreignKey: "hospital_id", as: "medications" });
+    Medication.belongsTo(Hospital, { foreignKey: "hospital_id", as: "hospital" });
+
+    Hospital.hasMany(Prescription, { foreignKey: "hospital_id", as: "prescriptions" });
+    Prescription.belongsTo(Hospital, { foreignKey: "hospital_id", as: "hospital" });
+
+    Hospital.hasMany(Bill, { foreignKey: "hospital_id", as: "bills" });
+    Bill.belongsTo(Hospital, { foreignKey: "hospital_id", as: "hospital" });
+
+    Hospital.hasMany(Payment, { foreignKey: "hospital_id", as: "payments" });
+    Payment.belongsTo(Hospital, { foreignKey: "hospital_id", as: "hospital" });
+
+    Hospital.hasMany(DispenseRecord, { foreignKey: "hospital_id", as: "dispenseRecords" });
+    DispenseRecord.belongsTo(Hospital, { foreignKey: "hospital_id", as: "hospital" });
+
+    Hospital.hasMany(Appointment, { foreignKey: "hospital_id", as: "appointments" });
+    Appointment.belongsTo(Hospital, { foreignKey: "hospital_id", as: "hospital" });
+
+    Hospital.hasMany(Consultation, { foreignKey: "hospital_id", as: "consultations" });
+    Consultation.belongsTo(Hospital, { foreignKey: "hospital_id", as: "hospital" });
+
+    Hospital.hasMany(LabTest, { foreignKey: "hospital_id", as: "labTests" });
+    LabTest.belongsTo(Hospital, { foreignKey: "hospital_id", as: "hospital" });
+
+    Hospital.hasMany(LabOrder, { foreignKey: "hospital_id", as: "labOrders" });
+    LabOrder.belongsTo(Hospital, { foreignKey: "hospital_id", as: "hospital" });
+
+    Hospital.hasMany(InventoryItem, { foreignKey: "hospital_id", as: "inventoryItems" });
+    InventoryItem.belongsTo(Hospital, { foreignKey: "hospital_id", as: "hospital" });
+
+    Hospital.hasMany(Admission, { foreignKey: "hospital_id", as: "admissions" });
+    Admission.belongsTo(Hospital, { foreignKey: "hospital_id", as: "hospital" });
+
+    Hospital.hasMany(NursingNote, { foreignKey: "hospital_id", as: "nursingNotes" });
+    NursingNote.belongsTo(Hospital, { foreignKey: "hospital_id", as: "hospital" });
 
     Department.hasMany(Ward, { foreignKey: "department_id", as: "wards" });
     Ward.belongsTo(Department, {

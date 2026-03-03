@@ -38,11 +38,16 @@ module.exports = (sequelize) => {
         allowNull: true,
         comment: "M-Pesa transaction code when payment_method is mpesa",
       },
+      hospital_id: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: { model: "hospitals", key: "id" },
+      },
     },
     {
       tableName: "payments",
       timestamps: true,
-      indexes: [{ fields: ["bill_id"] }, { fields: ["payment_date"] }, { fields: ["receipt_number"] }],
+      indexes: [{ fields: ["bill_id"] }, { fields: ["payment_date"] }, { fields: ["receipt_number"] }, { fields: ["hospital_id"] }],
     }
   );
 

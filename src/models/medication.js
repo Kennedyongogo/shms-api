@@ -30,11 +30,16 @@ module.exports = (sequelize) => {
         allowNull: true,
         references: { model: "inventory_items", key: "id" },
       },
+      hospital_id: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: { model: "hospitals", key: "id" },
+      },
     },
     {
       tableName: "medications",
       timestamps: true,
-      indexes: [{ fields: ["name"] }, { fields: ["inventory_item_id"] }],
+      indexes: [{ fields: ["name"] }, { fields: ["inventory_item_id"] }, { fields: ["hospital_id"] }],
     }
   );
 

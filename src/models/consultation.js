@@ -27,12 +27,18 @@ module.exports = (sequelize) => {
         type: DataTypes.TEXT,
         allowNull: true,
       },
+      hospital_id: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: { model: "hospitals", key: "id" },
+      },
     },
     {
       tableName: "consultations",
       timestamps: true,
       indexes: [
         { unique: true, fields: ["appointment_id"] },
+        { fields: ["hospital_id"] },
       ],
     }
   );

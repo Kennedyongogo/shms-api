@@ -34,6 +34,11 @@ module.exports = (sequelize) => {
         allowNull: false,
         defaultValue: "unpaid",
       },
+      hospital_id: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: { model: "hospitals", key: "id" },
+      },
     },
     {
       tableName: "bills",
@@ -43,6 +48,7 @@ module.exports = (sequelize) => {
         { fields: ["consultation_id"] },
         { fields: ["appointment_id"] },
         { fields: ["status"] },
+        { fields: ["hospital_id"] },
       ],
     }
   );

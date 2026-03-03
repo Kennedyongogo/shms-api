@@ -69,6 +69,7 @@ const bookAppointment = async (req, res) => {
       created_by: created_by ?? null,
       is_walk_in: !!is_walk_in,
       bill_amount: billAmountNumber,
+      hospital_id: hid ?? null,
     });
 
     // Walk-in + pending: auto-create unpaid billing record (appointment-linked bill)
@@ -86,6 +87,7 @@ const bookAppointment = async (req, res) => {
         appointment_id: appt.id,
         total_amount: amount,
         status: "unpaid",
+        hospital_id: hid ?? null,
       });
 
       await BillItem.create({
@@ -285,8 +287,10 @@ const listByDoctor = async (req, res) => {
         return res.status(200).json({ success: true, data: [], pagination: { total: 0, page: 1, limit: parseInt(req.query.limit, 10) || 10, totalPages: 0 } });
     }
     const { page, limit, offset } = parsePagination(req.query);
+    const where = { doctor_id };
+    if (hid != null) where.hospital_id = hid;
     const { count, rows } = await Appointment.findAndCountAll({
-      where: { doctor_id },
+      where,
       limit,
       offset,
       order: [["appointment_date", "DESC"]],
@@ -322,8 +326,10 @@ const listByPatient = async (req, res) => {
         return res.status(200).json({ success: true, data: [], pagination: { total: 0, page: 1, limit: parseInt(req.query.limit, 10) || 10, totalPages: 0 } });
     }
     const { page, limit, offset } = parsePagination(req.query);
+    const where = { patient_id };
+    if (hid != null) where.hospital_id = hid;
     const { count, rows } = await Appointment.findAndCountAll({
-      where: { patient_id },
+      where,
       limit,
       offset,
       order: [["appointment_date", "DESC"]],
@@ -355,6 +361,8 @@ const listAll = async (req, res) => {
     const { search, status, doctor_id, patient_id } = req.query;
 
     const where = {};
+    const hid = getHospitalId(req);
+    if (hid != null) where.hospital_id = hid;
     if (status) where.status = status;
     if (doctor_id) where.doctor_id = doctor_id;
     if (patient_id) where.patient_id = patient_id;
@@ -623,17 +631,30 @@ const remove = async (req, res) => {
         deleted.consultation = true;
       }
 
-      // Delete appointment-linked bills (payments, items, then bill).
-      const appointmentBills = await Bill.findAll({
+      // Delete all bills linked to this appointment:
+      // 1) Bills with appointment_id set (e.g. walk-in created at booking)
+      // 2) Bills linked only via BillItem (item_type: "appointment", reference_id: appointmentId), e.g. from "Create bill" in UI
+      const billsByAppointmentId = await Bill.findAll({
         where: { appointment_id: appointmentId },
+        attributes: ["id"],
         ...tx,
       });
-      for (const bill of appointmentBills) {
-        await Payment.destroy({ where: { bill_id: bill.id }, ...tx });
-        await BillItem.destroy({ where: { bill_id: bill.id }, ...tx });
-        await bill.destroy(tx);
+      const billItemsForAppointment = await BillItem.findAll({
+        where: { item_type: "appointment", reference_id: String(appointmentId) },
+        attributes: ["bill_id"],
+        ...tx,
+      });
+      const billIdsToDelete = new Set([
+        ...billsByAppointmentId.map((b) => b.id),
+        ...billItemsForAppointment.map((i) => i.bill_id),
+      ]);
+      for (const billId of billIdsToDelete) {
+        await Payment.destroy({ where: { bill_id: billId }, ...tx });
+        await BillItem.destroy({ where: { bill_id: billId }, ...tx });
+        const bill = await Bill.findByPk(billId, tx);
+        if (bill) await bill.destroy(tx);
       }
-      deleted.appointmentBills = appointmentBills.length;
+      deleted.appointmentBills = billIdsToDelete.size;
 
       await appt.destroy(tx);
     });

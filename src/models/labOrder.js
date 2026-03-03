@@ -29,6 +29,11 @@ module.exports = (sequelize) => {
         allowNull: false,
         defaultValue: "pending",
       },
+      hospital_id: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: { model: "hospitals", key: "id" },
+      },
     },
     {
       tableName: "lab_orders",
@@ -38,6 +43,7 @@ module.exports = (sequelize) => {
         { fields: ["doctor_id"] },
         { fields: ["consultation_id"] },
         { fields: ["status"] },
+        { fields: ["hospital_id"] },
       ],
     }
   );

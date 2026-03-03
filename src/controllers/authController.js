@@ -47,9 +47,16 @@ const getRoleIdByNameOrFail = async (name) => {
 };
 
 const getDefaultRoleId = async () => getRoleIdByNameOrFail("patient");
-const getAdminRoleId = async () => getRoleIdByNameOrFail("admin");
+/** Role name for the user who creates the hospital on register; same role used for full CRUD. */
+const SUPER_ADMIN_ROLE_NAME = "Super Admin";
+const getSuperAdminRoleId = async () => {
+  let role = await Role.findOne({ where: { name: SUPER_ADMIN_ROLE_NAME } });
+  if (!role) {
+    role = await Role.create({ name: SUPER_ADMIN_ROLE_NAME, hospital_id: null });
+  }
+  return role.id;
+};
 
-const SUPERADMIN_ROLE_NAME = "Super Admin";
 const VALID_PACKAGES = ["silver", "gold"];
 
 /**
@@ -137,7 +144,7 @@ const registerOrganization = async (req, res) => {
     });
 
     const superAdminRole = await Role.create({
-      name: SUPERADMIN_ROLE_NAME,
+      name: SUPER_ADMIN_ROLE_NAME,
       hospital_id: hospital.id,
     });
     await RoleMenuItem.bulkCreate(
@@ -307,22 +314,22 @@ const bootstrapPromoteMe = async (req, res) => {
     const userId = req.userId;
     if (!userId) return res.status(401).json({ success: false, message: "Authentication required" });
 
-    // Only allow if there is currently NO admin user (bootstrap safety)
-    const adminRoleId = await getAdminRoleId();
-    const countAdmins = await User.count({ where: { role_id: adminRoleId } });
-    if (countAdmins > 0) {
-      return res.status(403).json({ success: false, message: "Bootstrap is disabled because an admin already exists" });
+    // Only allow if there is currently NO Super Admin user (bootstrap safety)
+    const superAdminRoleId = await getSuperAdminRoleId();
+    const countSuperAdmins = await User.count({ where: { role_id: superAdminRoleId } });
+    if (countSuperAdmins > 0) {
+      return res.status(403).json({ success: false, message: "Bootstrap is disabled because a Super Admin already exists" });
     }
     const user = await User.findByPk(userId);
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
 
-    await user.update({ role_id: adminRoleId });
-    const role = await Role.findByPk(adminRoleId);
-    await auditLog({ user: { id: userId } }, { action: "BOOTSTRAP_PROMOTE_ADMIN", table_name: "User", record_id: userId });
+    await user.update({ role_id: superAdminRoleId });
+    const role = await Role.findByPk(superAdminRoleId);
+    await auditLog({ user: { id: userId } }, { action: "BOOTSTRAP_PROMOTE_SUPER_ADMIN", table_name: "User", record_id: userId });
 
     return res.status(200).json({
       success: true,
-      message: "User promoted to admin (bootstrap)",
+      message: "User promoted to Super Admin (bootstrap)",
       data: { user: sanitizeUser(user), role },
     });
   } catch (error) {

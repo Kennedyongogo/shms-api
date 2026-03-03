@@ -137,7 +137,7 @@ exports.optionalAuth = async (req, res, next) => {
   }
 };
 
-// Require one of the specified role names (e.g. ["admin"])
+// Require one of the specified role names (e.g. ["Super Admin"])
 exports.requireRoles = (roleNames = []) => {
   const allowed = new Set(roleNames);
   return (req, res, next) => {

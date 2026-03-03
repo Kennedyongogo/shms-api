@@ -3,14 +3,14 @@ const { ALL_MENU_KEYS, PACKAGE_KEYS } = require("../constants/menuKeys");
 
 /**
  * Returns the list of menu keys the given role is allowed to see (before package filter).
- * - If role name is "admin" or "superadmin", returns all keys.
+ * - If role name is "Super Admin" or "superadmin", returns all keys.
  * - Otherwise returns keys stored in role_menu_items for that role (order preserved as in ALL_MENU_KEYS).
  * - "settings" is always included for every role.
  */
 async function getMenuItemsForRole(roleId, roleName) {
   if (!roleId) return [];
   const name = (roleName || "").toLowerCase().trim();
-  if (name === "admin" || name === "superadmin") return [...ALL_MENU_KEYS];
+  if (name === "Super Admin" || name === "superadmin") return [...ALL_MENU_KEYS];
 
   const rows = await RoleMenuItem.findAll({
     where: { role_id: roleId },

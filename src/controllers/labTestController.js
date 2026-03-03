@@ -5,5 +5,6 @@ module.exports = createCrudController({
   Model: LabTest,
   name: "LabTest",
   searchableFields: ["test_name", "test_code"],
+  scopeByHospital: true,
 });
 

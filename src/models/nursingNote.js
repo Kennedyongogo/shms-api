@@ -57,6 +57,11 @@ module.exports = (sequelize) => {
         allowNull: true,
         defaultValue: DataTypes.NOW,
       },
+      hospital_id: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: { model: "hospitals", key: "id" },
+      },
     },
     {
       tableName: "nursing_notes",
@@ -67,6 +72,7 @@ module.exports = (sequelize) => {
         { fields: ["nurse_id"] },
         { fields: ["date_time"] },
         { fields: ["recorded_at"] },
+        { fields: ["hospital_id"] },
       ],
     }
   );

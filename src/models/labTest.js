@@ -22,11 +22,16 @@ module.exports = (sequelize) => {
         type: DataTypes.DECIMAL(12, 2),
         allowNull: true,
       },
+      hospital_id: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: { model: "hospitals", key: "id" },
+      },
     },
     {
       tableName: "lab_tests",
       timestamps: true,
-      indexes: [{ unique: true, fields: ["test_code"] }, { fields: ["test_name"] }],
+      indexes: [{ unique: true, fields: ["test_code"] }, { fields: ["test_name"] }, { fields: ["hospital_id"] }],
     }
   );
 

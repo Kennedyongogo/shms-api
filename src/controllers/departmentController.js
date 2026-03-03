@@ -8,6 +8,7 @@ const crud = createCrudController({
   name: "Department",
   searchableFields: ["name", "description"],
   include: [{ model: Hospital, as: "hospital", attributes: ["id", "name"], required: false }],
+  scopeByHospital: true,
 });
 
 // List departments: always scoped to user's hospital when req.user.hospital_id is set

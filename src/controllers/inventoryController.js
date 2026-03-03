@@ -1,11 +1,13 @@
 const { InventoryItem, Medication, InventoryTransaction } = require("../models");
 const { createCrudController } = require("../utils/crudControllerFactory");
 const { auditLog } = require("../utils/auditLog");
+const { getHospitalId } = require("../utils/hospitalScope");
 
 const crud = createCrudController({
   Model: InventoryItem,
   name: "InventoryItem",
   searchableFields: ["name", "category"],
+  scopeByHospital: true,
 });
 
 /** Create or get a Medication linked to this inventory item so pharmacy can prescribe/dispense without manual setup. */
@@ -24,10 +26,12 @@ const addToPharmacy = async (req, res) => {
         message: "Already available in pharmacy",
       });
     }
+    const hospitalId = getHospitalId(req) ?? item.hospital_id ?? null;
     medication = await Medication.create({
       name: item.name,
       dosage_form: item.category || null,
       inventory_item_id: item.id,
+      hospital_id: hospitalId,
     });
     await auditLog(req, { action: "ADD_TO_PHARMACY", table_name: "Medication", record_id: medication?.id });
     return res.status(201).json({

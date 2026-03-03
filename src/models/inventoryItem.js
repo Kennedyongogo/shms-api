@@ -44,11 +44,16 @@ module.exports = (sequelize) => {
         allowNull: true,
         comment: "Units per pack when supplied in packs (e.g. 20 tablets per packet).",
       },
+      hospital_id: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: { model: "hospitals", key: "id" },
+      },
     },
     {
       tableName: "inventory_items",
       timestamps: true,
-      indexes: [{ fields: ["name"] }, { fields: ["category"] }],
+      indexes: [{ fields: ["name"] }, { fields: ["category"] }, { fields: ["hospital_id"] }],
     }
   );
 

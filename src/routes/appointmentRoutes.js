@@ -13,7 +13,7 @@ router.get("/", appointmentController.listAll);
 router.get("/doctor/:doctor_id", appointmentController.listByDoctor);
 router.get("/patient/:patient_id", appointmentController.listByPatient);
 router.get("/:id", appointmentController.getById);
-router.delete("/:id", requireRoles(["admin"]), appointmentController.remove);
+router.delete("/:id", requireRoles(["Super Admin"]), appointmentController.remove);
 
 module.exports = router;
 

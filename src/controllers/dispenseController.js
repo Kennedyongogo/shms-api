@@ -13,6 +13,7 @@ const {
 const { parsePagination } = require("../utils/crudControllerFactory");
 const { requirePaidByReferenceOrRespond } = require("../utils/paymentGate");
 const { auditLog } = require("../utils/auditLog");
+const { getHospitalId } = require("../utils/hospitalScope");
 
 async function getCurrentStaff(req) {
   if (!req.userId) return null;
@@ -115,12 +116,14 @@ const recordDispensing = async (req, res) => {
     const finalPharmacistId = pharmacist_id ?? staff?.id ?? null;
     const dispenseDate = dispense_date ?? new Date();
 
+    const hospitalId = getHospitalId(req);
     const record = await sequelize.transaction(async (t) => {
       const dispenseRecord = await DispenseRecord.create(
         {
           prescription_id,
           pharmacist_id: finalPharmacistId,
           dispense_date: dispenseDate,
+          hospital_id: hospitalId ?? pres.hospital_id ?? null,
         },
         { transaction: t }
       );
@@ -175,6 +178,8 @@ const listDispenseRecords = async (req, res) => {
     const { page, limit, offset } = parsePagination(req.query);
     const { prescription_id, pharmacist_id } = req.query;
     const where = {};
+    const hid = getHospitalId(req);
+    if (hid != null) where.hospital_id = hid;
     if (prescription_id) where.prescription_id = prescription_id;
     if (pharmacist_id) where.pharmacist_id = pharmacist_id;
 
@@ -233,6 +238,9 @@ const getDispenseRecordById = async (req, res) => {
       return res
         .status(404)
         .json({ success: false, message: "Dispense record not found" });
+    const hid = getHospitalId(req);
+    if (hid != null && record.hospital_id != null && record.hospital_id !== hid)
+      return res.status(404).json({ success: false, message: "Dispense record not found" });
     return res.status(200).json({ success: true, data: record });
   } catch (error) {
     return res

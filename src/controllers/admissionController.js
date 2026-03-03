@@ -15,8 +15,9 @@ const { sequelize } = require("../config/database");
 const { parsePagination } = require("../utils/crudControllerFactory");
 const { auditLog } = require("../utils/auditLog");
 const { requirePaidByReferenceOrRespond } = require("../utils/paymentGate");
+const { getHospitalId } = require("../utils/hospitalScope");
 
-const isAdmin = (req) => req.userType === "user" && req.role?.name === "admin";
+const isSuperAdmin = (req) => req.userType === "user" && req.role?.name === "Super Admin";
 
 async function getCurrentStaff(req) {
   if (!req.userId) return null;
@@ -37,6 +38,8 @@ const listAdmissions = async (req, res) => {
     const { page, limit, offset } = parsePagination(req.query);
     const { status, appointment_id, patient_id } = req.query;
     const where = {};
+    const hid = getHospitalId(req);
+    if (hid != null) where.hospital_id = hid;
     if (status && String(status).trim()) {
       where.status = String(status).trim();
     }
@@ -74,6 +77,9 @@ const getAdmissionById = async (req, res) => {
     const { id } = req.params;
     const admission = await Admission.findByPk(id, { include: admissionIncludes });
     if (!admission) return res.status(404).json({ success: false, message: "Admission not found" });
+    const hid = getHospitalId(req);
+    if (hid != null && admission.hospital_id != null && admission.hospital_id !== hid)
+      return res.status(404).json({ success: false, message: "Admission not found" });
     return res.status(200).json({ success: true, data: admission });
   } catch (error) {
     return res.status(500).json({ success: false, message: "Error fetching admission", error: error.message });
@@ -100,7 +106,7 @@ const admitPatient = async (req, res) => {
       if (patient_id && String(patient_id) !== String(appointment.patient_id)) {
         return res.status(400).json({ success: false, message: "patient_id does not match appointment" });
       }
-      if (!isAdmin(req)) {
+      if (!isSuperAdmin(req)) {
         const staff = await getCurrentStaff(req);
         if (!staff) return res.status(403).json({ success: false, message: "Access denied: staff account required" });
         if (String(staff.id) !== String(appointment.doctor_id)) {
@@ -113,7 +119,7 @@ const admitPatient = async (req, res) => {
       }
       finalPatientId = patient_id;
       finalDoctorId = doctor_id;
-      if (!isAdmin(req)) {
+      if (!isSuperAdmin(req)) {
         const staff = await getCurrentStaff(req);
         if (!staff) return res.status(403).json({ success: false, message: "Access denied: staff account required" });
         if (String(staff.id) !== String(doctor_id)) {
@@ -128,6 +134,7 @@ const admitPatient = async (req, res) => {
       return res.status(400).json({ success: false, message: "Bed is not available" });
     }
 
+    const hospitalId = getHospitalId(req);
     const result = await sequelize.transaction(async (tx) => {
       const admission = await Admission.create(
         {
@@ -137,6 +144,7 @@ const admitPatient = async (req, res) => {
           doctor_id: finalDoctorId,
           admission_date: admission_date ?? new Date(),
           status: "admitted",
+          hospital_id: hospitalId ?? null,
         },
         { transaction: tx }
       );
@@ -148,6 +156,7 @@ const admitPatient = async (req, res) => {
           patient_id: finalPatientId,
           total_amount: 0,
           status: "unpaid",
+          hospital_id: hospitalId ?? null,
         },
         { transaction: tx }
       );
@@ -180,7 +189,7 @@ const generateAdmissionBilling = async (req, res) => {
     });
     if (!admission) return res.status(404).json({ success: false, message: "Admission not found" });
 
-    if (!isAdmin(req)) {
+    if (!isSuperAdmin(req)) {
       const staff = await getCurrentStaff(req);
       if (!staff) return res.status(403).json({ success: false, message: "Access denied: staff account required" });
       if (admission.doctor_id && String(admission.doctor_id) !== String(staff.id)) {
@@ -228,7 +237,7 @@ const dischargePatient = async (req, res) => {
     });
     if (!admission) return res.status(404).json({ success: false, message: "Admission not found" });
 
-    if (!isAdmin(req)) {
+    if (!isSuperAdmin(req)) {
       const staff = await getCurrentStaff(req);
       if (!staff) return res.status(403).json({ success: false, message: "Access denied: staff account required" });
       if (admission.doctor_id && String(admission.doctor_id) !== String(staff.id)) {

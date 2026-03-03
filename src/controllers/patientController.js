@@ -46,6 +46,7 @@ const crud = createCrudController({
   name: "Patient",
   searchableFields: ["gender", "blood_group", "insurance_provider", "emergency_contact"],
   include: baseInclude,
+  scopeByHospital: true,
 });
 
 const parseOptionalDecimal = (val) => {

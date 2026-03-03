@@ -9,6 +9,7 @@ const crud = createCrudController({
   Model: Consultation,
   name: "Consultation",
   searchableFields: ["symptoms", "diagnosis", "notes"],
+  scopeByHospital: true,
 });
 
 const includeAppointmentDetails = [
@@ -87,6 +88,7 @@ const recordConsultation = async (req, res) => {
       symptoms: symptoms ?? null,
       diagnosis: diagnosis ?? null,
       notes: notes ?? null,
+      hospital_id: getHospitalId(req) ?? null,
     });
     await auditLog(req, { action: "RECORD_CONSULTATION", table_name: "Consultation", record_id: consultation?.id });
     return res.status(201).json({ success: true, data: consultation });
@@ -112,6 +114,7 @@ const create = async (req, res) => {
       symptoms: symptoms ?? null,
       diagnosis: diagnosis ?? null,
       notes: notes ?? null,
+      hospital_id: getHospitalId(req) ?? null,
     });
     await auditLog(req, { action: "CREATE_CONSULTATION", table_name: "Consultation", record_id: consultation?.id });
     return res.status(201).json({ success: true, data: consultation });
@@ -177,16 +180,17 @@ const listConsultations = async (req, res) => {
         }
       : undefined;
 
-    const where = search
-      ? {
-          [Op.or]: [
-            { symptoms: { [Op.iLike]: `%${search}%` } },
-            { diagnosis: { [Op.iLike]: `%${search}%` } },
-            { notes: { [Op.iLike]: `%${search}%` } },
-            { appointment_id: { [Op.iLike]: `%${search}%` } },
-          ],
-        }
-      : {};
+    const where = { ...(getHospitalId(req) != null ? { hospital_id: getHospitalId(req) } : {}) };
+    if (search) {
+      where[Op.or] = [
+        { symptoms: { [Op.iLike]: `%${search}%` } },
+        { diagnosis: { [Op.iLike]: `%${search}%` } },
+        { notes: { [Op.iLike]: `%${search}%` } },
+        { appointment_id: { [Op.iLike]: `%${search}%` } },
+      ];
+    }
+
+    const patientWhereClause = patientWhere && Object.keys(patientWhere).length ? patientWhere : undefined;
 
     const { count, rows } = await Consultation.findAndCountAll({
       where,
@@ -203,7 +207,7 @@ const listConsultations = async (req, res) => {
               model: Patient,
               as: "patient",
               required: true,
-              where: Object.keys(patientWhere).length ? patientWhere : undefined,
+              where: patientWhereClause,
               attributes: { exclude: ["password"] },
               include: [
                 {

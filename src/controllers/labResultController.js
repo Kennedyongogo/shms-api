@@ -4,7 +4,7 @@ const { parsePagination } = require("../utils/crudControllerFactory");
 const { requirePaidByReferenceOrRespond } = require("../utils/paymentGate");
 const { auditLog } = require("../utils/auditLog");
 
-const isAdmin = (req) => req.userType === "user" && req.role?.name === "admin";
+const isSuperAdmin = (req) => req.userType === "user" && req.role?.name === "Super Admin";
 
 async function getCurrentStaff(req) {
   if (!req.userId) return null;
@@ -101,8 +101,8 @@ const enterResults = async (req, res) => {
     const item = await LabOrderItem.findByPk(lab_order_item_id);
     if (!item) return res.status(404).json({ success: false, message: "Lab order item not found" });
 
-    // Only admin, lab technician, or doctor assigned to the appointment can enter/update results (like consultation).
-    if (!isAdmin(req)) {
+    // Only Super Admin, lab technician, or doctor assigned to the appointment can enter/update results (like consultation).
+    if (!isSuperAdmin(req)) {
       const staff = await getCurrentStaff(req);
       if (!staff) {
         return res.status(403).json({ success: false, message: "Access denied: staff account required" });

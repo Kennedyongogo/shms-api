@@ -1,6 +1,6 @@
 /**
  * Navbar menu keys. Must match frontend Navbar item keys (e.g. path segment or key).
- * Used for role-based menu visibility: admin/superadmin sees all (filtered by package); other roles see only keys stored in role_menu_items.
+ * Used for role-based menu visibility: Super Admin sees all (filtered by package); other roles see only keys stored in role_menu_items.
  */
 const ALL_MENU_KEYS = [
   "dashboard",

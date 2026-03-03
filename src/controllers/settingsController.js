@@ -6,6 +6,7 @@ const crud = createCrudController({
   Model: SystemSetting,
   name: "SystemSetting",
   searchableFields: ["setting_key", "setting_value"],
+  scopeByHospital: true,
 });
 
 const getAll = async (req, res) => {

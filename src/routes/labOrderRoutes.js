@@ -8,7 +8,7 @@ router.post("/", labOrderController.createLabOrder);
 router.patch("/:id/status", labOrderController.updateStatus);
 router.get("/", labOrderController.list);
 router.get("/:id", labOrderController.getById);
-router.delete("/:id", requireRoles(["admin"]), labOrderController.remove);
+router.delete("/:id", requireRoles(["Super Admin"]), labOrderController.remove);
 
 module.exports = router;
 

@@ -24,6 +24,7 @@ const crud = createCrudController({
   buildCreateData: withImagePath,
   buildUpdateData: withImagePath,
   include,
+  scopeByHospital: true,
 });
 
 const getAll = async (req, res) => {
@@ -32,7 +33,7 @@ const getAll = async (req, res) => {
     const { search, hospital_id, department_id, status } = req.query;
 
     const where = { ...scopeByHospital(req) };
-    if (hospital_id && where.hospital_id == null) where.hospital_id = hospital_id;
+    if (hospital_id) where.hospital_id = hospital_id;
     if (department_id) where.department_id = department_id;
     if (status) where.status = status;
 

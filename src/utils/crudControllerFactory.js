@@ -17,6 +17,13 @@ const buildSearchWhere = (search, searchableFields = []) => {
   };
 };
 
+/** When scopeByHospital is true and req.user.hospital_id is set, restrict to that hospital. */
+const hospitalWhere = (req) => {
+  const hid = req.user?.hospital_id;
+  if (!hid) return {};
+  return { hospital_id: hid };
+};
+
 const createCrudController = ({
   Model,
   name,
@@ -25,11 +32,15 @@ const createCrudController = ({
   buildUpdateData,
   include,
   defaultOrder = [["createdAt", "DESC"]],
+  scopeByHospital = false,
 }) => {
   const tableName = name;
   const create = async (req, res) => {
     try {
-      const payload = buildCreateData ? await buildCreateData(req) : req.body;
+      const payload = buildCreateData ? await buildCreateData(req) : { ...req.body };
+      if (scopeByHospital && req.user?.hospital_id != null) {
+        payload.hospital_id = req.user.hospital_id;
+      }
       const created = await Model.create(payload);
       await auditLog(req, { action: `CREATE_${tableName.toUpperCase()}`, table_name: tableName, record_id: created?.id });
       return res.status(201).json({ success: true, data: created });
@@ -47,7 +58,7 @@ const createCrudController = ({
       const { page, limit, offset } = parsePagination(req.query);
       const { search } = req.query;
 
-      const where = buildSearchWhere(search, searchableFields);
+      const where = { ...(scopeByHospital ? hospitalWhere(req) : {}), ...buildSearchWhere(search, searchableFields) };
       const { count, rows } = await Model.findAndCountAll({
         where,
         limit,
@@ -75,6 +86,9 @@ const createCrudController = ({
       const { id } = req.params;
       const record = await Model.findByPk(id, { include });
       if (!record) return res.status(404).json({ success: false, message: `${name} not found` });
+      if (scopeByHospital && req.user?.hospital_id != null && record.hospital_id != null && record.hospital_id !== req.user.hospital_id) {
+        return res.status(404).json({ success: false, message: `${name} not found` });
+      }
       return res.status(200).json({ success: true, data: record });
     } catch (error) {
       return res.status(500).json({
@@ -90,6 +104,9 @@ const createCrudController = ({
       const { id } = req.params;
       const record = await Model.findByPk(id);
       if (!record) return res.status(404).json({ success: false, message: `${name} not found` });
+      if (scopeByHospital && record.hospital_id != null && req.user?.hospital_id != null && record.hospital_id !== req.user.hospital_id) {
+        return res.status(403).json({ success: false, message: `Access denied: ${name} belongs to another hospital` });
+      }
 
       const payload = buildUpdateData ? await buildUpdateData(req, record) : req.body;
       const updated = await record.update(payload);
@@ -109,6 +126,9 @@ const createCrudController = ({
       const { id } = req.params;
       const record = await Model.findByPk(id);
       if (!record) return res.status(404).json({ success: false, message: `${name} not found` });
+      if (scopeByHospital && record.hospital_id != null && req.user?.hospital_id != null && record.hospital_id !== req.user.hospital_id) {
+        return res.status(403).json({ success: false, message: `Access denied: ${name} belongs to another hospital` });
+      }
       await record.destroy();
       await auditLog(req, { action: `DELETE_${tableName.toUpperCase()}`, table_name: tableName, record_id: id });
       return res.status(200).json({ success: true, message: `${name} deleted` });

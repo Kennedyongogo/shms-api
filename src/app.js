@@ -83,13 +83,13 @@ app.use("/uploads", express.static(uploadsRoot));
 console.log("🔗 Registering API routes...");
 app.use("/api/auth", authRoutes);
 app.use("/api/patient-auth", patientAuthRoutes);
-// Users/Roles: any authenticated user can view (GET); only admin can modify (enforced inside route files)
+// Users/Roles: any authenticated user can view (GET); only Super Admin can modify (enforced inside route files)
 app.use("/api/users", authenticateUser, userRoutes);
 app.use("/api/roles", authenticateUser, roleRoutes);
 
-// Hospitals/Staff: allow authenticated users to view (GET); admin-only modifications enforced in route files
+// Hospitals/Staff: allow authenticated users to view (GET); Super Admin-only modifications enforced in route files
 app.use("/api/hospitals", authenticateUser, hospitalRoutes);
-// Departments: allow authenticated users to view (GET); admin-only modifications enforced in route files
+// Departments: allow authenticated users to view (GET); Super Admin-only modifications enforced in route files
 app.use("/api/departments", authenticateUser, departmentRoutes);
 app.use("/api/wards", authenticateUser, wardRoutes);
 app.use("/api/beds", authenticateUser, bedRoutes);
@@ -142,7 +142,7 @@ app.use("/api/notifications", authenticateUser, notificationRoutes);
 app.use("/api/reports", authenticateUser, reportRoutes);
 app.use("/api/audit-logs", authenticateUser, auditRoutes);
 app.use("/api/statistics", authenticateUser, statisticsRoutes);
-app.use("/api/settings", authenticateUser, requireRoles(["admin", "Super Admin"]), settingsRoutes);
+app.use("/api/settings", authenticateUser, requireRoles(["Super Admin"]), settingsRoutes);
 
 console.log("✅ All API routes registered");
 

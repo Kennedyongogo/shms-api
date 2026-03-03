@@ -5,9 +5,14 @@ const { auditLog } = require("../utils/auditLog");
 const { getReceiptData } = require("./receiptController");
 const { getHospitalId } = require("../utils/hospitalScope");
 
-/** When a bill becomes paid, confirm any appointment(s) it paid for. */
+/** When a bill is paid via real payment records, confirm any appointment(s) it paid for. */
 async function confirmAppointmentIfBillPaid(bill) {
   if (bill.status !== "paid") return;
+
+  const payments = await Payment.findAll({ where: { bill_id: bill.id }, attributes: ["amount_paid"] });
+  const paidTotal = payments.reduce((sum, p) => sum + Number(p.amount_paid || 0), 0);
+  const total = Number(bill.total_amount || 0);
+  if (payments.length === 0 || paidTotal < total) return;
 
   const appointmentIds = new Set();
   if (bill.appointment_id) appointmentIds.add(String(bill.appointment_id));
@@ -61,6 +66,7 @@ const processPayment = async (req, res) => {
       amount_paid: amount_paid ?? 0,
       payment_method,
       payment_date: payment_date ?? new Date(),
+      hospital_id: getHospitalId(req) ?? null,
     });
 
     // Generate receipt number: REC-YYYYMMDD-NNNN (daily sequence)

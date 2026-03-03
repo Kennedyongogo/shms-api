@@ -30,6 +30,7 @@ const crud = createCrudController({
   name: "Staff",
   searchableFields: ["staff_type", "specialization", "license_number"],
   include: baseInclude,
+  scopeByHospital: true,
 });
 
 // Enhanced listing: supports search across staff + linked user, and filters

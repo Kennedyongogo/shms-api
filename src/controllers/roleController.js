@@ -10,6 +10,7 @@ const crud = createCrudController({
   Model: Role,
   name: "Role",
   searchableFields: ["name"],
+  scopeByHospital: true,
 });
 
 const scopeByHospital = (req) => {
@@ -132,8 +133,8 @@ const remove = async (req, res) => {
     if (role.hospital_id !== scope.hospital_id) {
       return res.status(403).json({ success: false, message: "Access denied to this role" });
     }
-    if (role.name === "admin" || role.name === "Super Admin") {
-      return res.status(400).json({ success: false, message: 'Cannot delete the "Super Admin" or "admin" role' });
+    if (role.name === "Super Admin") {
+      return res.status(400).json({ success: false, message: 'Cannot delete the "Super Admin" role' });
     }
 
     const inUse = await User.count({ where: { role_id: id } });
@@ -198,10 +199,10 @@ const putMenuItems = async (req, res) => {
     if (role.hospital_id !== scope.hospital_id) {
       return res.status(403).json({ success: false, message: "Access denied to this role" });
     }
-    if (role.name === "admin" || role.name === "Super Admin") {
+    if (role.name === "Super Admin") {
       return res.status(400).json({
         success: false,
-        message: "Cannot change menu items for Super Admin or admin; they always see all items (filtered by package).",
+        message: "Cannot change menu items for Super Admin; they always see all items (filtered by package).",
       });
     }
     // Only allow keys that are in this hospital's subscription package

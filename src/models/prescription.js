@@ -29,6 +29,11 @@ module.exports = (sequelize) => {
         allowNull: false,
         defaultValue: DataTypes.NOW,
       },
+      hospital_id: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: { model: "hospitals", key: "id" },
+      },
     },
     {
       tableName: "prescriptions",
@@ -38,6 +43,7 @@ module.exports = (sequelize) => {
         { fields: ["doctor_id"] },
         { fields: ["consultation_id"] },
         { fields: ["prescription_date"] },
+        { fields: ["hospital_id"] },
       ],
     }
   );

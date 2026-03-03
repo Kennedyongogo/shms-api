@@ -7,10 +7,10 @@ const base = createCrudController({
   searchableFields: [],
 });
 
-/** Allow only admin or the staff who owns the schedule (doctor_id). */
+/** Allow only Super Admin or the staff who owns the schedule (doctor_id). */
 const canModifySchedule = async (req, schedule) => {
   if (!schedule) return false;
-  if (req.userType === "user" && req.role?.name === "admin") return true;
+  if (req.userType === "user" && req.role?.name === "Super Admin") return true;
   if (!req.userId) return false;
   const staff = await Staff.findOne({ where: { user_id: req.userId }, attributes: ["id"] });
   return staff && String(staff.id) === String(schedule.doctor_id);
@@ -22,7 +22,7 @@ const update = async (req, res) => {
     const record = await DoctorSchedule.findByPk(id);
     if (!record) return res.status(404).json({ success: false, message: "DoctorSchedule not found" });
     const allowed = await canModifySchedule(req, record);
-    if (!allowed) return res.status(403).json({ success: false, message: "Only admin or the staff who owns this schedule can edit it" });
+    if (!allowed) return res.status(403).json({ success: false, message: "Only Super Admin or the staff who owns this schedule can edit it" });
     const { day_of_week, start_time, end_time } = req.body;
     const payload = {};
     if (day_of_week !== undefined) payload.day_of_week = day_of_week;
@@ -47,7 +47,7 @@ const remove = async (req, res) => {
     const record = await DoctorSchedule.findByPk(id);
     if (!record) return res.status(404).json({ success: false, message: "DoctorSchedule not found" });
     const allowed = await canModifySchedule(req, record);
-    if (!allowed) return res.status(403).json({ success: false, message: "Only admin or the staff who owns this schedule can remove it" });
+    if (!allowed) return res.status(403).json({ success: false, message: "Only Super Admin or the staff who owns this schedule can remove it" });
     await record.destroy();
     const { auditLog } = require("../utils/auditLog");
     await auditLog(req, { action: "DELETE_DOCTORSCHEDULE", table_name: "DoctorSchedule", record_id: id });

@@ -14,5 +14,6 @@ module.exports = createCrudController({
   name: "Medication",
   searchableFields: ["name", "dosage_form", "manufacturer"],
   include: medicationInclude,
+  scopeByHospital: true,
 });
 

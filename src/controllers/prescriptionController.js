@@ -1,8 +1,9 @@
 const { Prescription, PrescriptionItem, Medication, Consultation, Appointment, Staff, Bill, BillItem, Patient, User, DispenseRecord, sequelize } = require("../models");
 const { parsePagination } = require("../utils/crudControllerFactory");
 const { auditLog } = require("../utils/auditLog");
+const { getHospitalId } = require("../utils/hospitalScope");
 
-const isAdmin = (req) => req.userType === "user" && req.role?.name === "admin";
+const isSuperAdmin = (req) => req.userType === "user" && req.role?.name === "Super Admin";
 
 async function getCurrentStaff(req) {
   if (!req.userId) return null;
@@ -20,7 +21,7 @@ const createPrescription = async (req, res) => {
     let finalDoctorId = doctor_id ?? null;
     let appointmentIdForBill = null;
 
-    if (!isAdmin(req)) {
+    if (!isSuperAdmin(req)) {
       const staff = await getCurrentStaff(req);
       if (!staff) return res.status(403).json({ success: false, message: "Access denied: staff account required" });
 
@@ -44,7 +45,7 @@ const createPrescription = async (req, res) => {
       appointmentIdForBill = appt.id;
     }
 
-    // For admin, still try to link the bill to the appointment and set doctor from appointment if consultation_id is provided.
+    // For Super Admin, still try to link the bill to the appointment and set doctor from appointment if consultation_id is provided.
     if (consultation_id) {
       const c = await Consultation.findByPk(consultation_id, {
         include: [{ model: Appointment, as: "appointment", attributes: ["id", "doctor_id"] }],
@@ -53,6 +54,7 @@ const createPrescription = async (req, res) => {
       if (!finalDoctorId && c?.appointment?.doctor_id) finalDoctorId = c.appointment.doctor_id;
     }
 
+    const hospitalId = getHospitalId(req);
     const prescription = await sequelize.transaction(async (t) => {
       const created = await Prescription.create(
         {
@@ -60,6 +62,7 @@ const createPrescription = async (req, res) => {
           doctor_id: finalDoctorId,
           consultation_id: consultation_id ?? null,
           prescription_date: prescription_date ?? new Date(),
+          hospital_id: hospitalId ?? null,
         },
         { transaction: t }
       );
@@ -102,6 +105,7 @@ const createPrescription = async (req, res) => {
             appointment_id: appointmentIdForBill ?? null,
             total_amount: total,
             status: "unpaid",
+            hospital_id: hospitalId ?? null,
           },
           { transaction: t }
         );
@@ -135,6 +139,8 @@ const listPrescriptions = async (req, res) => {
     const { page, limit, offset } = parsePagination(req.query);
     const { patient_id, doctor_id, consultation_id } = req.query;
     const where = {};
+    const hid = getHospitalId(req);
+    if (hid != null) where.hospital_id = hid;
     if (patient_id) where.patient_id = patient_id;
     if (doctor_id) where.doctor_id = doctor_id;
     if (consultation_id) where.consultation_id = consultation_id;
@@ -203,6 +209,7 @@ const listPrescriptions = async (req, res) => {
 const getPrescriptionById = async (req, res) => {
   try {
     const { id } = req.params;
+    const hid = getHospitalId(req);
     const prescription = await Prescription.findByPk(id, {
       include: [
         {
@@ -220,6 +227,9 @@ const getPrescriptionById = async (req, res) => {
       ],
     });
     if (!prescription) return res.status(404).json({ success: false, message: "Prescription not found" });
+    if (hid != null && prescription.hospital_id != null && prescription.hospital_id !== hid) {
+      return res.status(404).json({ success: false, message: "Prescription not found" });
+    }
     return res.status(200).json({ success: true, data: prescription });
   } catch (error) {
     return res.status(500).json({ success: false, message: "Error fetching prescription", error: error.message });

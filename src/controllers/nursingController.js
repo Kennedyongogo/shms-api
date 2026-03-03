@@ -1,6 +1,7 @@
 const { NursingNote, Admission, Staff } = require("../models");
 const { createCrudController } = require("../utils/crudControllerFactory");
 const { auditLog } = require("../utils/auditLog");
+const { getHospitalId } = require("../utils/hospitalScope");
 
 async function getCurrentStaff(req) {
   if (!req.userId) return null;
@@ -12,6 +13,7 @@ const crud = createCrudController({
   Model: NursingNote,
   name: "NursingNote",
   searchableFields: ["notes", "blood_pressure"],
+  scopeByHospital: true,
 });
 
 const recordNursingNote = async (req, res) => {
@@ -56,6 +58,7 @@ const recordNursingNote = async (req, res) => {
       pulse: pulse != null ? parseInt(pulse, 10) : null,
       respiratory_rate: respiratory_rate != null ? parseInt(respiratory_rate, 10) : null,
       pain_scale: pain_scale != null ? parseInt(pain_scale, 10) : null,
+      hospital_id: getHospitalId(req) ?? null,
     });
     await auditLog(req, { action: "RECORD_NURSING_NOTE", table_name: "NursingNote", record_id: created?.id });
     return res.status(201).json({ success: true, data: created });

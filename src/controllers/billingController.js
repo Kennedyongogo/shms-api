@@ -34,6 +34,7 @@ const generateBill = async (req, res) => {
       consultation_id: consultation_id ?? null,
       total_amount: 0,
       status: "unpaid",
+      hospital_id: hid ?? null,
     });
     await auditLog(req, { action: "GENERATE_BILL", table_name: "Bill", record_id: bill?.id });
     return res.status(201).json({ success: true, data: bill });
@@ -64,8 +65,11 @@ const addBillItems = async (req, res) => {
         .status(404)
         .json({ success: false, message: "Bill not found" });
     const hid = getHospitalId(req);
-    if (hid != null && bill.patient?.hospital_id !== hid)
-      return res.status(403).json({ success: false, message: "Bill does not belong to your hospital." });
+    if (hid != null) {
+      const billHid = bill.hospital_id ?? bill.patient?.hospital_id;
+      if (billHid != null && billHid !== hid)
+        return res.status(403).json({ success: false, message: "Bill does not belong to your hospital." });
+    }
 
     const rows = items.map((i) => ({
       bill_id,
@@ -168,12 +172,13 @@ const listBills = async (req, res) => {
     const { search, status, patient_id, appointment_id, consultation_id, item_type } = req.query;
 
     const where = {};
+    const hid = getHospitalId(req);
+    if (hid != null) where.hospital_id = hid;
     if (status) where.status = status;
     if (patient_id) where.patient_id = patient_id;
     if (appointment_id) where.appointment_id = appointment_id;
     if (consultation_id) where.consultation_id = consultation_id;
 
-    const hid = getHospitalId(req);
     const patientWhere = { ...(hid ? { hospital_id: hid } : {}) };
     if (search) {
       patientWhere[Op.or] = [
@@ -262,8 +267,11 @@ const getBillById = async (req, res) => {
     });
     if (!bill) return res.status(404).json({ success: false, message: "Bill not found" });
     const hid = getHospitalId(req);
-    if (hid != null && bill.patient?.hospital_id !== hid)
-      return res.status(404).json({ success: false, message: "Bill not found" });
+    if (hid != null) {
+      const billHid = bill.hospital_id ?? bill.patient?.hospital_id;
+      if (billHid != null && billHid !== hid)
+        return res.status(404).json({ success: false, message: "Bill not found" });
+    }
 
     const payments = bill.payments || [];
     const paid_amount = payments.reduce((sum, p) => sum + Number(p.amount_paid || 0), 0);

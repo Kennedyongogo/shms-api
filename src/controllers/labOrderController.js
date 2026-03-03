@@ -17,7 +17,7 @@ const { sequelize } = require("../config/database");
 const { requirePaidByReferenceOrRespond } = require("../utils/paymentGate");
 const { auditLog } = require("../utils/auditLog");
 
-const isAdmin = (req) => req.userType === "user" && req.role?.name === "admin";
+const isSuperAdmin = (req) => req.userType === "user" && req.role?.name === "Super Admin";
 
 async function getCurrentStaff(req) {
   if (!req.userId) return null;
@@ -54,7 +54,7 @@ const createLabOrder = async (req, res) => {
     let finalDoctorId = doctor_id ?? null;
     let appointmentIdForBill = null;
 
-    if (!isAdmin(req)) {
+    if (!isSuperAdmin(req)) {
       const staff = await getCurrentStaff(req);
       if (!staff)
         return res
@@ -106,7 +106,7 @@ const createLabOrder = async (req, res) => {
 
     // Admin can optionally create orders; if linked to a consultation and doctor_id not provided,
     // derive doctor_id from the appointment so the UI shows "Doctor".
-    if (isAdmin(req) && !finalDoctorId && consultation_id) {
+    if (isSuperAdmin(req) && !finalDoctorId && consultation_id) {
       const consultation = await Consultation.findByPk(consultation_id);
       if (!consultation)
         return res
@@ -130,7 +130,7 @@ const createLabOrder = async (req, res) => {
       appointmentIdForBill = appt.id;
     }
 
-    // If admin provided consultation_id but we didn't load it above, still try to link the bill to appointment.
+    // If Super Admin provided consultation_id but we didn't load it above, still try to link the bill to appointment.
     if (!appointmentIdForBill && consultation_id) {
       const c = await Consultation.findByPk(consultation_id);
       if (c?.appointment_id) appointmentIdForBill = c.appointment_id;
@@ -234,8 +234,8 @@ const updateStatus = async (req, res) => {
         .status(404)
         .json({ success: false, message: "Lab order not found" });
 
-    // Status updates: admin, or lab technician, or staff assigned to the appointment (like consultation).
-    if (!isAdmin(req)) {
+    // Status updates: Super Admin, or lab technician, or staff assigned to the appointment (like consultation).
+    if (!isSuperAdmin(req)) {
       const staff = await getCurrentStaff(req);
       if (!staff) {
         return res.status(403).json({ success: false, message: "Access denied: staff account required" });
@@ -251,7 +251,7 @@ const updateStatus = async (req, res) => {
 
       // Lab technician and assigned doctor: same workflow rules (no cancel, no set back to pending).
       if (status === "cancelled") {
-        return res.status(403).json({ success: false, message: "Only admins can cancel lab orders" });
+        return res.status(403).json({ success: false, message: "Only Super Admin can cancel lab orders" });
       }
       if (status === "pending") {
         return res.status(403).json({ success: false, message: "Cannot set status back to pending" });
@@ -272,7 +272,7 @@ const updateStatus = async (req, res) => {
       return res.status(200).json({ success: true, data: order });
     }
     const can = transitions[current]?.has(status);
-    if (!can && !isAdmin(req)) {
+    if (!can && !isSuperAdmin(req)) {
       return res.status(400).json({ success: false, message: `Invalid status transition: ${current} → ${status}` });
     }
 

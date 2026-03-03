@@ -1,6 +1,6 @@
 const { Appointment, Consultation, Staff } = require("../models");
 
-const isAdmin = (req) => req.userType === "user" && req.role?.name === "admin";
+const isSuperAdmin = (req) => req.userType === "user" && req.role?.name === "Super Admin";
 
 async function getCurrentStaff(req) {
   if (!req.userId) return null;
@@ -10,7 +10,7 @@ async function getCurrentStaff(req) {
 
 exports.requireStaffOrAdmin = async (req, res, next) => {
   try {
-    if (isAdmin(req)) return next();
+    if (isSuperAdmin(req)) return next();
     const staff = await getCurrentStaff(req);
     if (!staff) return res.status(403).json({ success: false, message: "Access denied: staff account required" });
     req.staff = staff;
@@ -27,7 +27,7 @@ exports.requireAppointmentDoctorOrAdmin = async (req, res, next) => {
     const appt = await Appointment.findByPk(id);
     if (!appt) return res.status(404).json({ success: false, message: "Appointment not found" });
 
-    if (isAdmin(req)) {
+    if (isSuperAdmin(req)) {
       req.appointment = appt;
       return next();
     }
@@ -55,7 +55,7 @@ exports.requireAppointmentDoctorOrAdminFromBody = (fieldName) => {
       const appt = await Appointment.findByPk(appointmentId);
       if (!appt) return res.status(404).json({ success: false, message: "Appointment not found" });
 
-      if (isAdmin(req)) {
+      if (isSuperAdmin(req)) {
         req.appointment = appt;
         return next();
       }
@@ -85,7 +85,7 @@ exports.requireAppointmentDoctorOrAdminParam = (paramName) => {
       const appt = await Appointment.findByPk(appointmentId);
       if (!appt) return res.status(404).json({ success: false, message: "Appointment not found" });
 
-      if (isAdmin(req)) {
+      if (isSuperAdmin(req)) {
         req.appointment = appt;
         return next();
       }
@@ -115,7 +115,7 @@ exports.requireConsultationDoctorOrAdmin = async (req, res, next) => {
     const appt = await Appointment.findByPk(consultation.appointment_id);
     if (!appt) return res.status(404).json({ success: false, message: "Appointment not found" });
 
-    if (isAdmin(req)) {
+    if (isSuperAdmin(req)) {
       req.consultation = consultation;
       req.appointment = appt;
       return next();
@@ -137,7 +137,7 @@ exports.requireConsultationDoctorOrAdmin = async (req, res, next) => {
   }
 };
 
-// Consultation: assigned doctor only (admin cannot work on consultation; admin can still delete appointments via appointment routes)
+// Consultation: assigned doctor only (Super Admin cannot work on consultation; Super Admin can still delete appointments via appointment routes)
 exports.requireAppointmentDoctorOnlyFromBody = (fieldName) => {
   return async (req, res, next) => {
     try {

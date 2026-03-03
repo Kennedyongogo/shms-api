@@ -16,6 +16,7 @@ const crud = createCrudController({
   searchableFields: ["title", "slug", "description", "location", "status"],
   buildCreateData: withBannerPath,
   buildUpdateData: withBannerPath,
+  scopeByHospital: true,
 });
 
 const getAll = async (req, res) => {
