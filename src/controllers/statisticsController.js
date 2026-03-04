@@ -1,4 +1,5 @@
 const { Op } = require("sequelize");
+const { getHospitalId } = require("../utils/hospitalScope");
 const {
   Hospital,
   Department,
@@ -10,6 +11,7 @@ const {
   Appointment,
   Consultation,
   LabOrder,
+  LabOrderItem,
   LabResult,
   LabTest,
   Medication,
@@ -47,6 +49,9 @@ function getDateRanges() {
  */
 const getAll = async (req, res) => {
   try {
+    const hid = getHospitalId(req);
+    const hospWhere = hid != null ? { hospital_id: hid } : {};
+    const hospitalCountWhere = hid != null ? { id: hid } : {};
     const { todayStart, weekStart, monthStart } = getDateRanges();
 
     const [
@@ -93,15 +98,25 @@ const getAll = async (req, res) => {
       newsCount,
       bedByStatus,
     ] = await Promise.all([
-      Hospital.count(),
-      Department.count(),
-      Service.count(),
-      Ward.count(),
-      Bed.count(),
-      Staff.count(),
-      Patient.count(),
-      Patient.count({ where: { status: "active" } }),
-      Patient.findAll({ attributes: ["status"], raw: true }).then((rows) => {
+      Hospital.count({ where: hospitalCountWhere }),
+      Department.count({ where: hospWhere }),
+      Service.count({ where: hospWhere }),
+      hid != null
+        ? Ward.count({
+            include: [{ model: Department, as: "department", where: { hospital_id: hid }, required: true }],
+          })
+        : Ward.count(),
+      hid != null
+        ? Bed.count({
+            include: [
+              { model: Ward, as: "ward", required: true, include: [{ model: Department, as: "department", where: { hospital_id: hid }, required: true }] },
+            ],
+          })
+        : Bed.count(),
+      Staff.count({ where: hospWhere }),
+      Patient.count({ where: hospWhere }),
+      Patient.count({ where: { ...hospWhere, status: "active" } }),
+      Patient.findAll({ attributes: ["status"], raw: true, where: hospWhere }).then((rows) => {
         const byStatus = { active: 0, inactive: 0, suspended: 0 };
         rows.forEach((r) => {
           const s = r.status || "active";
@@ -110,8 +125,8 @@ const getAll = async (req, res) => {
         });
         return byStatus;
       }),
-      Appointment.count(),
-      Appointment.findAll({ attributes: ["status"], raw: true }).then((rows) => {
+      Appointment.count({ where: hospWhere }),
+      Appointment.findAll({ attributes: ["status"], raw: true, where: hospWhere }).then((rows) => {
         const byStatus = { pending: 0, confirmed: 0, completed: 0, cancelled: 0 };
         rows.forEach((r) => {
           const s = r.status || "pending";
@@ -120,13 +135,13 @@ const getAll = async (req, res) => {
         });
         return byStatus;
       }),
-      Appointment.count({ where: { appointment_date: { [Op.gte]: todayStart } } }),
-      Appointment.count({ where: { appointment_date: { [Op.gte]: weekStart } } }),
-      Appointment.count({ where: { appointment_date: { [Op.gte]: monthStart } } }),
-      Consultation.count(),
-      Consultation.count({ where: { createdAt: { [Op.gte]: monthStart } } }),
-      LabOrder.count(),
-      LabOrder.findAll({ attributes: ["status"], raw: true }).then((rows) => {
+      Appointment.count({ where: { ...hospWhere, appointment_date: { [Op.gte]: todayStart } } }),
+      Appointment.count({ where: { ...hospWhere, appointment_date: { [Op.gte]: weekStart } } }),
+      Appointment.count({ where: { ...hospWhere, appointment_date: { [Op.gte]: monthStart } } }),
+      Consultation.count({ where: hospWhere }),
+      Consultation.count({ where: { ...hospWhere, createdAt: { [Op.gte]: monthStart } } }),
+      LabOrder.count({ where: hospWhere }),
+      LabOrder.findAll({ attributes: ["status"], raw: true, where: hospWhere }).then((rows) => {
         const byStatus = { pending: 0, in_progress: 0, completed: 0, cancelled: 0 };
         rows.forEach((r) => {
           const s = r.status || "pending";
@@ -135,13 +150,17 @@ const getAll = async (req, res) => {
         });
         return byStatus;
       }),
-      LabResult.count(),
-      LabTest.count(),
-      Medication.count(),
-      Prescription.count(),
-      DispenseRecord.count(),
-      Bill.count(),
-      Bill.findAll({ attributes: ["status"], raw: true }).then((rows) => {
+      hid != null
+        ? LabResult.count({
+            include: [{ model: LabOrderItem, as: "labOrderItem", required: true, include: [{ model: LabOrder, as: "labOrder", where: { hospital_id: hid }, required: true }] }],
+          })
+        : LabResult.count(),
+      LabTest.count({ where: hospWhere }),
+      Medication.count({ where: hospWhere }),
+      Prescription.count({ where: hospWhere }),
+      DispenseRecord.count({ where: hospWhere }),
+      Bill.count({ where: hospWhere }),
+      Bill.findAll({ attributes: ["status"], raw: true, where: hospWhere }).then((rows) => {
         const byStatus = { unpaid: 0, partial: 0, paid: 0, cancelled: 0 };
         rows.forEach((r) => {
           const s = r.status || "unpaid";
@@ -150,19 +169,22 @@ const getAll = async (req, res) => {
         });
         return byStatus;
       }),
-      Payment.sum("amount_paid").then((v) => Number(v) || 0),
-      Payment.sum("amount_paid", { where: { payment_date: { [Op.gte]: monthStart } } }).then((v) => Number(v) || 0),
-      Admission.count(),
-      Admission.count({ where: { status: "admitted" } }),
-      Admission.findAll({ attributes: ["status"], raw: true }).then((rows) => {
+      Payment.sum("amount_paid", { where: hospWhere }).then((v) => Number(v) || 0),
+      Payment.sum("amount_paid", { where: { ...hospWhere, payment_date: { [Op.gte]: monthStart } } }).then((v) => Number(v) || 0),
+      Admission.count({ where: hospWhere }),
+      Admission.count({ where: { ...hospWhere, status: "admitted" } }),
+      Admission.findAll({ attributes: ["status"], raw: true, where: hospWhere }).then((rows) => {
         const byStatus = {};
         rows.forEach((r) => { byStatus[r.status] = (byStatus[r.status] || 0) + 1; });
         return byStatus;
       }),
-      Admission.count({ where: { discharge_date: { [Op.gte]: monthStart } } }),
-      InventoryItem.count(),
+      Admission.count({ where: { ...hospWhere, discharge_date: { [Op.gte]: monthStart } } }),
+      InventoryItem.count({ where: hospWhere }),
       InventoryItem.count({
-        where: sequelize.literal("quantity_available <= reorder_level"),
+        where:
+          hid != null
+            ? { hospital_id: hid, [Op.and]: [sequelize.literal("quantity_available <= reorder_level")] }
+            : sequelize.literal("quantity_available <= reorder_level"),
       }).catch(() => 0),
       Supplier.count(),
       PurchaseOrder.count(),
@@ -175,20 +197,36 @@ const getAll = async (req, res) => {
         });
         return byStatus;
       }),
-      MedicalReport.count(),
-      VitalSigns.count(),
-      User.count(),
-      Event.count(),
-      News.count(),
-      Bed.findAll({ attributes: ["status"], raw: true }).then((rows) => {
-        const byStatus = { available: 0, occupied: 0, maintenance: 0 };
-        rows.forEach((r) => {
-          const s = r.status || "available";
-          if (Object.prototype.hasOwnProperty.call(byStatus, s)) byStatus[s] += 1;
-          else byStatus[s] = 1;
-        });
-        return byStatus;
-      }),
+      hid != null ? MedicalReport.count({ include: [{ model: Patient, as: "patient", where: { hospital_id: hid }, required: true }] }) : MedicalReport.count(),
+      hid != null ? VitalSigns.count({ include: [{ model: Consultation, as: "consultation", where: { hospital_id: hid }, required: true }] }) : VitalSigns.count(),
+      User.count({ where: hospWhere }),
+      Event.count({ where: hospWhere }),
+      News.count({ where: hospWhere }),
+      hid != null
+        ? Bed.findAll({
+            attributes: ["status"],
+            raw: true,
+            include: [
+              { model: Ward, as: "ward", required: true, include: [{ model: Department, as: "department", where: { hospital_id: hid }, required: true }] },
+            ],
+          }).then((rows) => {
+            const byStatus = { available: 0, occupied: 0, maintenance: 0 };
+            rows.forEach((r) => {
+              const s = r.status || "available";
+              if (Object.prototype.hasOwnProperty.call(byStatus, s)) byStatus[s] += 1;
+              else byStatus[s] = 1;
+            });
+            return byStatus;
+          })
+        : Bed.findAll({ attributes: ["status"], raw: true }).then((rows) => {
+            const byStatus = { available: 0, occupied: 0, maintenance: 0 };
+            rows.forEach((r) => {
+              const s = r.status || "available";
+              if (Object.prototype.hasOwnProperty.call(byStatus, s)) byStatus[s] += 1;
+              else byStatus[s] = 1;
+            });
+            return byStatus;
+          }),
     ]);
 
     const data = {
@@ -279,6 +317,19 @@ const getAll = async (req, res) => {
       },
     };
 
+    // Silver package: omit ward, admissions, inventory stats (clinic scope); frontend hides those tabs via menu.
+    if (hid) {
+      const hospital = await Hospital.findByPk(hid, { attributes: ["subscription_package"] });
+      const pkg = hospital?.subscription_package;
+      if (pkg === "silver") {
+        delete data.wardsAndBeds;
+        delete data.admissions;
+        delete data.inventory;
+        data.overview.activeAdmissions = null;
+        data.overview.totalBeds = null;
+      }
+    }
+
     return res.status(200).json({ success: true, data });
   } catch (error) {
     return res.status(500).json({
@@ -298,6 +349,8 @@ const getAll = async (req, res) => {
  */
 const getAppointmentsChart = async (req, res) => {
   try {
+    const hid = getHospitalId(req);
+    const hospWhere = hid != null ? { hospital_id: hid } : {};
     const now = new Date();
     const year = Math.min(9999, Math.max(1, parseInt(req.query.year, 10) || now.getFullYear()));
     const monthParam = req.query.month;
@@ -315,6 +368,7 @@ const getAppointmentsChart = async (req, res) => {
           const end = new Date(year, month - 1, day, 23, 59, 59, 999);
           return Appointment.count({
             where: {
+              ...hospWhere,
               appointment_date: {
                 [Op.gte]: start,
                 [Op.lte]: end,
@@ -336,6 +390,7 @@ const getAppointmentsChart = async (req, res) => {
           ];
           return Appointment.count({
             where: {
+              ...hospWhere,
               appointment_date: {
                 [Op.gte]: start,
                 [Op.lte]: end,
@@ -374,6 +429,8 @@ const getAppointmentsChart = async (req, res) => {
  */
 const getRevenueChart = async (req, res) => {
   try {
+    const hid = getHospitalId(req);
+    const hospWhere = hid != null ? { hospital_id: hid } : {};
     const now = new Date();
     const year = Math.min(9999, Math.max(1, parseInt(req.query.year, 10) || now.getFullYear()));
     const monthParam = req.query.month;
@@ -391,6 +448,7 @@ const getRevenueChart = async (req, res) => {
           const end = new Date(year, month - 1, day, 23, 59, 59, 999);
           return Payment.sum("amount_paid", {
             where: {
+              ...hospWhere,
               payment_date: {
                 [Op.gte]: start,
                 [Op.lte]: end,
@@ -411,6 +469,7 @@ const getRevenueChart = async (req, res) => {
           ];
           return Payment.sum("amount_paid", {
             where: {
+              ...hospWhere,
               payment_date: {
                 [Op.gte]: start,
                 [Op.lte]: end,
@@ -447,7 +506,10 @@ const getRevenueChart = async (req, res) => {
  */
 const getPharmacyChart = async (req, res) => {
   try {
+    const hid = getHospitalId(req);
+    const hospWhere = hid != null ? { hospital_id: hid } : {};
     const medications = await Medication.findAll({
+      where: hospWhere,
       attributes: ["id", "name"],
       include: [
         {
@@ -499,6 +561,8 @@ const getPharmacyChart = async (req, res) => {
  */
 const getAdmissionsChart = async (req, res) => {
   try {
+    const hid = getHospitalId(req);
+    const hospWhere = hid != null ? { hospital_id: hid } : {};
     const now = new Date();
     const year = Math.min(9999, Math.max(1, parseInt(req.query.year, 10) || now.getFullYear()));
     const monthParam = req.query.month;
@@ -516,6 +580,7 @@ const getAdmissionsChart = async (req, res) => {
           const end = new Date(year, month - 1, day, 23, 59, 59, 999);
           return Admission.count({
             where: {
+              ...hospWhere,
               admission_date: {
                 [Op.gte]: start,
                 [Op.lte]: end,
@@ -536,6 +601,7 @@ const getAdmissionsChart = async (req, res) => {
           ];
           return Admission.count({
             where: {
+              ...hospWhere,
               admission_date: {
                 [Op.gte]: start,
                 [Op.lte]: end,

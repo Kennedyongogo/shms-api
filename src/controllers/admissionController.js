@@ -10,6 +10,7 @@ const {
   Staff,
   Bill,
   BillItem,
+  Hospital,
 } = require("../models");
 const { sequelize } = require("../config/database");
 const { parsePagination } = require("../utils/crudControllerFactory");
@@ -135,6 +136,18 @@ const admitPatient = async (req, res) => {
     }
 
     const hospitalId = getHospitalId(req);
+    if (hospitalId) {
+      const hospital = await Hospital.findByPk(hospitalId);
+      if (!hospital) {
+        return res.status(404).json({ success: false, message: "Hospital not found" });
+      }
+      if (hospital.subscription_package === "silver") {
+        return res.status(403).json({
+          success: false,
+          message: "Ward admissions are not available in your current subscription plan",
+        });
+      }
+    }
     const result = await sequelize.transaction(async (tx) => {
       const admission = await Admission.create(
         {

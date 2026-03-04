@@ -45,6 +45,7 @@ const purchaseOrderRoutes = require("./routes/purchaseOrderRoutes");
 const billingRoutes = require("./routes/billingRoutes");
 const paymentRoutes = require("./routes/paymentRoutes");
 const mpesaRoutes = require("./routes/mpesaRoutes");
+const mpesaSettingsRoutes = require("./routes/mpesaSettingsRoutes");
 const insuranceRoutes = require("./routes/insuranceRoutes");
 
 const admissionRoutes = require("./routes/admissionRoutes");
@@ -121,6 +122,7 @@ app.use("/api/purchase-orders", authenticateUser, purchaseOrderRoutes);
 app.use("/api/billing", authenticateUser, billingRoutes);
 app.use("/api/payments", authenticateUser, paymentRoutes);
 app.use("/api/mpesa", mpesaRoutes);
+app.use("/api/mpesa-settings", authenticateUser, mpesaSettingsRoutes);
 app.use("/api/insurance-claims", authenticateUser, insuranceRoutes);
 
 app.use("/api/admissions", authenticateUser, admissionRoutes);

@@ -1,4 +1,4 @@
-const { Payment, Bill, sequelize } = require("../models");
+const { Payment, Bill, MpesaSetting, sequelize } = require("../models");
 const { confirmAppointmentIfBillPaid } = require("./paymentController");
 const { stkPush, getBillIdByCheckoutRequestId } = require("../services/mpesaService");
 
@@ -22,6 +22,21 @@ const initiateStkPush = async (req, res) => {
       return res.status(404).json({ success: false, error: "Bill not found" });
     }
 
+    const hospitalId = bill.hospital_id || req.user?.hospital_id || null;
+    if (!hospitalId) {
+      return res.status(400).json({ success: false, error: "Bill is not linked to a hospital; cannot determine M-Pesa configuration." });
+    }
+
+    const mpesaSetting = await MpesaSetting.findOne({
+      where: { hospital_id: hospitalId, is_active: true },
+    });
+    if (!mpesaSetting) {
+      return res.status(400).json({
+        success: false,
+        error: "M-Pesa is not configured for this hospital. Please add M-Pesa settings in the admin portal.",
+      });
+    }
+
     const numAmount = Number(amount);
     if (isNaN(numAmount) || numAmount <= 0) {
       return res.status(400).json({ success: false, error: "amount must be a positive number" });
@@ -32,7 +47,16 @@ const initiateStkPush = async (req, res) => {
       ? "254" + String(phone).slice(1)
       : String(phone).replace(/^\+/, "");
 
-    const response = await stkPush(formattedPhone, numAmount, bill_id);
+    const config = {
+      consumerKey: mpesaSetting.consumer_key,
+      consumerSecret: mpesaSetting.consumer_secret,
+      shortcode: mpesaSetting.shortcode,
+      passkey: mpesaSetting.passkey,
+      callbackUrl: mpesaSetting.callback_url || process.env.MPESA_CALLBACK_URL || process.env.CALLBACK_URL,
+      environment: mpesaSetting.environment || "sandbox",
+    };
+
+    const response = await stkPush(config, formattedPhone, numAmount, bill_id);
 
     return res.json({
       success: true,
@@ -106,6 +130,7 @@ const mpesaCallback = async (req, res) => {
       payment_method: "mpesa",
       payment_date: new Date(),
       mpesa_receipt_number: mpesaReceiptNumber || null,
+      hospital_id: bill.hospital_id || null,
     });
 
     // Generate receipt number: REC-YYYYMMDD-NNNN

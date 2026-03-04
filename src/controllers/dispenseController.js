@@ -8,6 +8,7 @@ const {
   Staff,
   User,
   Patient,
+  Hospital,
   sequelize,
 } = require("../models");
 const { parsePagination } = require("../utils/crudControllerFactory");
@@ -62,7 +63,14 @@ const recordDispensing = async (req, res) => {
       });
     }
 
-    // Validate: every item must be linked to inventory and have enough stock
+    const hospitalId = getHospitalId(req);
+    let isSilver = false;
+    if (hospitalId) {
+      const hospital = await Hospital.findByPk(hospitalId);
+      isSilver = hospital?.subscription_package === "silver";
+    }
+
+    // Validate: every item must be linked to inventory and have enough stock (unless Silver: then allow unlinked, no stock deduction)
     const insufficient = [];
     const notLinked = [];
     for (const item of pres.items) {
@@ -89,7 +97,7 @@ const recordDispensing = async (req, res) => {
         });
       }
     }
-    if (notLinked.length) {
+    if (!isSilver && notLinked.length) {
       return res.status(400).json({
         success: false,
         message:
@@ -116,7 +124,6 @@ const recordDispensing = async (req, res) => {
     const finalPharmacistId = pharmacist_id ?? staff?.id ?? null;
     const dispenseDate = dispense_date ?? new Date();
 
-    const hospitalId = getHospitalId(req);
     const record = await sequelize.transaction(async (t) => {
       const dispenseRecord = await DispenseRecord.create(
         {
@@ -128,10 +135,11 @@ const recordDispensing = async (req, res) => {
         { transaction: t }
       );
 
-      // Group by inventory_item_id so duplicate medications on the same prescription deduct once
+      // Group by inventory_item_id so duplicate medications on the same prescription deduct once (skip unlinked for Silver)
       const byInventoryItem = new Map();
       for (const item of pres.items) {
-        const invId = item.medication.inventory_item_id;
+        const invId = item.medication?.inventory_item_id;
+        if (!invId) continue;
         const qty = item.quantity || 1;
         byInventoryItem.set(invId, (byInventoryItem.get(invId) || 0) + qty);
       }

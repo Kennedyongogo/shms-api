@@ -143,6 +143,7 @@ const createLabOrder = async (req, res) => {
           doctor_id: finalDoctorId,
           consultation_id: consultation_id ?? null,
           status: "pending",
+          hospital_id: req.user?.hospital_id ?? null,
         },
         { transaction: t }
       );
@@ -175,6 +176,7 @@ const createLabOrder = async (req, res) => {
             appointment_id: appointmentIdForBill ?? null,
             total_amount: total,
             status: "unpaid",
+            hospital_id: req.user?.hospital_id ?? null,
           },
           { transaction: t }
         );

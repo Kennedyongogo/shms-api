@@ -11,20 +11,36 @@ const MPESA_BASE = process.env.MPESA_BASE_URL || "https://sandbox.safaricom.co.k
 /** In-memory map: CheckoutRequestID -> bill_id (callback does not return AccountReference). Use Redis in production. */
 const checkoutToBillId = new Map();
 
+function resolveBaseUrl(config) {
+  if (config?.baseUrl) return config.baseUrl;
+  if (config?.environment === "production") return "https://api.safaricom.co.ke";
+  return MPESA_BASE;
+}
+
+function resolveConsumerKey(config) {
+  return config?.consumerKey || process.env.MPESA_CONSUMER_KEY || process.env.CONSUMER_KEY;
+}
+
+function resolveConsumerSecret(config) {
+  return config?.consumerSecret || process.env.MPESA_CONSUMER_SECRET || process.env.CONSUMER_SECRET;
+}
+
 /**
  * Get OAuth access token for Daraja API.
+ * @param {object} config - M-Pesa configuration (per hospital).
  * @returns {Promise<string>} access_token
  */
-async function getAccessToken() {
-  const consumerKey = process.env.MPESA_CONSUMER_KEY || process.env.CONSUMER_KEY;
-  const consumerSecret = process.env.MPESA_CONSUMER_SECRET || process.env.CONSUMER_SECRET;
+async function getAccessToken(config = null) {
+  const consumerKey = resolveConsumerKey(config);
+  const consumerSecret = resolveConsumerSecret(config);
 
   if (!consumerKey || !consumerSecret) {
     throw new Error("MPESA_CONSUMER_KEY and MPESA_CONSUMER_SECRET (or CONSUMER_KEY/CONSUMER_SECRET) are required");
   }
 
   const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString("base64");
-  const url = `${MPESA_BASE}/oauth/v1/generate?grant_type=client_credentials`;
+  const baseUrl = resolveBaseUrl(config);
+  const url = `${baseUrl}/oauth/v1/generate?grant_type=client_credentials`;
 
   const response = await fetch(url, {
     method: "GET",
@@ -56,17 +72,18 @@ async function getAccessToken() {
 
 /**
  * Send STK Push to customer phone.
+ * @param {object} config - M-Pesa configuration (per hospital, optional; falls back to env when null)
  * @param {string} phone - e.g. 254708374149
  * @param {number} amount - amount in KES
  * @param {string} billId - bill id (UUID or reference) for AccountReference
  * @returns {Promise<object>} Daraja STK push response
  */
-async function stkPush(phone, amount, billId) {
-  const token = await getAccessToken();
+async function stkPush(config, phone, amount, billId) {
+  const token = await getAccessToken(config);
 
-  const shortcode = process.env.MPESA_BUSINESS_SHORTCODE || process.env.BUSINESS_SHORTCODE;
-  const passkey = process.env.MPESA_PASSKEY || process.env.PASSKEY;
-  const callbackUrl = process.env.MPESA_CALLBACK_URL || process.env.CALLBACK_URL;
+  const shortcode = config?.shortcode || process.env.MPESA_BUSINESS_SHORTCODE || process.env.BUSINESS_SHORTCODE;
+  const passkey = config?.passkey || process.env.MPESA_PASSKEY || process.env.PASSKEY;
+  const callbackUrl = config?.callbackUrl || process.env.MPESA_CALLBACK_URL || process.env.CALLBACK_URL;
 
   if (!shortcode || !passkey || !callbackUrl) {
     throw new Error("MPESA_BUSINESS_SHORTCODE, MPESA_PASSKEY, and MPESA_CALLBACK_URL (or BUSINESS_SHORTCODE, PASSKEY, CALLBACK_URL) are required");
@@ -89,7 +106,8 @@ async function stkPush(phone, amount, billId) {
     TransactionDesc: "Hospital Bill Payment",
   };
 
-  const url = `${MPESA_BASE}/mpesa/stkpush/v1/processrequest`;
+  const baseUrl = resolveBaseUrl(config);
+  const url = `${baseUrl}/mpesa/stkpush/v1/processrequest`;
 
   console.log("📤 Sending M-Pesa STK Push...");
 
@@ -102,19 +120,37 @@ async function stkPush(phone, amount, billId) {
     body: JSON.stringify(payload),
   });
 
-  const data = await response.json().catch(() => ({}));
+  const text = await response.text().catch(() => "");
+  let data;
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = {};
+  }
 
   if (!response.ok) {
-    console.error("❌ M-Pesa STK error:", data);
-    const err = new Error(data.errorMessage || data.ResultDesc || response.statusText || "STK Push failed");
-    err.response = { status: response.status, data };
+    console.error("❌ M-Pesa STK error:", {
+      status: response.status,
+      text,
+      data,
+    });
+    const err = new Error(
+      data.errorMessage || data.ResultDesc || response.statusText || "STK Push failed"
+    );
+    err.response = { status: response.status, data, text };
     throw err;
   }
 
   if (data.ResponseCode !== undefined && data.ResponseCode !== "0") {
-    console.error("❌ M-Pesa STK response error:", data);
-    const err = new Error(data.ResponseDescription || data.CustomerMessage || "STK Push rejected");
-    err.response = { data };
+    console.error("❌ M-Pesa STK response error:", {
+      status: response.status,
+      text,
+      data,
+    });
+    const err = new Error(
+      data.ResponseDescription || data.CustomerMessage || "STK Push rejected"
+    );
+    err.response = { status: response.status, data, text };
     throw err;
   }
 

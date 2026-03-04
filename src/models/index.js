@@ -1,6 +1,6 @@
 const { sequelize } = require("../config/database");
 
-// COMPLETE HOSPITAL MANAGEMENT SYSTEM – ALL MODELS (45)
+// COMPLETE HOSPITAL MANAGEMENT SYSTEM – ALL MODELS (45+)
 const Role = require("./role")(sequelize);
 const Permission = require("./permission")(sequelize);
 const RolePermission = require("./rolePermission")(sequelize);
@@ -41,6 +41,8 @@ const InventoryTransaction = require("./inventoryTransaction")(sequelize);
 const Supplier = require("./supplier")(sequelize);
 const PurchaseOrder = require("./purchaseOrder")(sequelize);
 const PurchaseOrderItem = require("./purchaseOrderItem")(sequelize);
+
+const MpesaSetting = require("./mpesaSetting")(sequelize);
 
 const Bill = require("./bill")(sequelize);
 const BillItem = require("./billItem")(sequelize);
@@ -101,6 +103,7 @@ const models = {
   Supplier,
   PurchaseOrder,
   PurchaseOrderItem,
+  MpesaSetting,
   Bill,
   BillItem,
   Payment,
@@ -142,6 +145,7 @@ const initializeModels = async () => {
     await Department.sync({ force: false, alter: false });
     await Ward.sync({ force: false, alter: false });
     await Bed.sync({ force: false, alter: false });
+    await MpesaSetting.sync({ force: false, alter: false });
 
     // 3) STAFF MANAGEMENT
     await Staff.sync({ force: false, alter: false });
@@ -162,7 +166,7 @@ const initializeModels = async () => {
     await VitalSigns.sync({ force: false, alter: false });
 
     // 7) LABORATORY MODULE
-    await LabTest.sync({ force: true, alter: false });
+    await LabTest.sync({ force: false, alter: false });
     await LabOrder.sync({ force: false, alter: false });
     await LabOrderItem.sync({ force: false, alter: false });
     await LabResult.sync({ force: false, alter: false });
@@ -307,6 +311,9 @@ const setupAssociations = () => {
 
     Hospital.hasMany(Payment, { foreignKey: "hospital_id", as: "payments" });
     Payment.belongsTo(Hospital, { foreignKey: "hospital_id", as: "hospital" });
+
+    Hospital.hasOne(MpesaSetting, { foreignKey: "hospital_id", as: "mpesaSetting" });
+    MpesaSetting.belongsTo(Hospital, { foreignKey: "hospital_id", as: "hospital" });
 
     Hospital.hasMany(DispenseRecord, { foreignKey: "hospital_id", as: "dispenseRecords" });
     DispenseRecord.belongsTo(Hospital, { foreignKey: "hospital_id", as: "hospital" });
