@@ -1,5 +1,5 @@
 const jwt = require("jsonwebtoken");
-const { User, Role, Permission, Patient } = require("../models");
+const { User, Role, Permission, Patient, CarlvyneAccount } = require("../models");
 const config = require("../config/config");
 
 const extractBearerToken = (req) => {
@@ -71,6 +71,33 @@ exports.authenticateUser = async (req, res, next) => {
 };
 
 exports.authenticateToken = exports.authenticateUser;
+
+// Authenticate Carlvyne owners (CarlvyneAccount model) for M&E portal
+exports.authenticateCarlvyneOwner = async (req, res, next) => {
+  const token = extractBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ success: false, message: "Access denied, no token provided" });
+  }
+
+  try {
+    const decoded = jwt.verify(token, config.jwtSecret);
+    if (decoded.type !== "carlvyne_owner") {
+      return res.status(403).json({ success: false, message: "Access denied, invalid token type" });
+    }
+
+    const owner = await CarlvyneAccount.findByPk(decoded.id);
+    if (!owner || !owner.is_active) {
+      return res.status(403).json({ success: false, message: "Access denied, invalid or inactive account" });
+    }
+
+    req.carlvyneOwnerId = owner.id;
+    req.carlvyneOwner = owner;
+    req.userType = "carlvyne_owner";
+    next();
+  } catch (error) {
+    res.status(400).json({ success: false, message: "Invalid token" });
+  }
+};
 
 // Authenticate patients (Patient model) for the public portal
 exports.authenticatePatient = async (req, res, next) => {

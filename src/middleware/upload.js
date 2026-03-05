@@ -28,6 +28,10 @@ const storage = multer.diskStorage({
       uploadPath = path.join(uploadsRoot, "medical-attachments");
     } else if (file.fieldname === "profile_image") {
       uploadPath = path.join(uploadsRoot, "users", "profile-images");
+    } else if (file.fieldname === "demo_video") {
+      uploadPath = path.join(uploadsRoot, "demo-videos");
+    } else if (file.fieldname === "carlvyne_profile_image") {
+      uploadPath = path.join(uploadsRoot, "carlvyne", "profile-images");
     } else {
       uploadPath = path.join(uploadsRoot, "misc");
     }
@@ -130,6 +134,12 @@ const uploadMedicalAttachments = upload.array("medical_attachments", 10);
 // User profile image (User.profile_image_path)
 const uploadUserProfileImage = upload.single("profile_image");
 
+// Live demo video (LiveDemoVideo.video_path)
+const uploadDemoVideo = upload.single("demo_video");
+
+// Carlvyne account profile image (CarlvyneAccount.profile_picture_path)
+const uploadCarlvyneProfileImage = upload.single("carlvyne_profile_image");
+
 // Error handling middleware for multer
 const handleUploadError = (error, req, res, next) => {
   if (error instanceof multer.MulterError) {
@@ -220,6 +230,8 @@ module.exports = {
   uploadMedicalAttachment,
   uploadMedicalAttachments,
   uploadUserProfileImage,
+  uploadDemoVideo,
+  uploadCarlvyneProfileImage,
   handleUploadError,
   deleteFile,
   getFileType,

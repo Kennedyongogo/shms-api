@@ -28,6 +28,7 @@ const {
   User,
   Event,
   News,
+  AuditLog,
   sequelize,
 } = require("../models");
 
@@ -40,7 +41,8 @@ function getDateRanges() {
   weekStart.setDate(now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
   weekStart.setHours(0, 0, 0, 0);
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  return { now, todayStart, weekStart, monthStart };
+  const yearStart = new Date(now.getFullYear(), 0, 1);
+  return { now, todayStart, weekStart, monthStart, yearStart };
 }
 
 /**
@@ -631,4 +633,267 @@ const getAdmissionsChart = async (req, res) => {
   }
 };
 
-module.exports = { getAll, getAppointmentsChart, getRevenueChart, getPharmacyChart, getAdmissionsChart };
+/**
+ * GET /api/statistics/my-activity
+ * Returns per-user activity stats (based on AuditLog) for the authenticated user:
+ * - today: actions done since start of today
+ * - month: actions done since start of this month
+ * - year: actions done since start of this year
+ * Includes breakdown by table_name and a small recent activity list.
+ */
+const getMyActivity = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Authentication required" });
+    }
+
+    const { todayStart, monthStart, yearStart, now } = getDateRanges();
+
+    const logs = await AuditLog.findAll({
+      where: {
+        user_id: userId,
+        timestamp: {
+          [Op.gte]: yearStart,
+        },
+      },
+      attributes: ["action", "table_name", "timestamp"],
+      order: [["timestamp", "DESC"]],
+      raw: true,
+    });
+
+    const baseBucket = () => ({ total: 0, byTable: {} });
+    const today = baseBucket();
+    const month = baseBucket();
+    const year = baseBucket();
+
+    const recent = [];
+
+    logs.forEach((log, index) => {
+      const ts = new Date(log.timestamp);
+      if (Number.isNaN(ts.getTime())) return;
+
+      const table = log.table_name || "other";
+
+      if (ts >= yearStart) {
+        year.total += 1;
+        year.byTable[table] = (year.byTable[table] || 0) + 1;
+      }
+      if (ts >= monthStart) {
+        month.total += 1;
+        month.byTable[table] = (month.byTable[table] || 0) + 1;
+      }
+      if (ts >= todayStart) {
+        today.total += 1;
+        today.byTable[table] = (today.byTable[table] || 0) + 1;
+      }
+
+      if (index < 10) {
+        recent.push({
+          action: log.action,
+          table_name: log.table_name,
+          timestamp: log.timestamp,
+        });
+      }
+    });
+
+    const toTopTables = (bucket, limit = 5) => {
+      const entries = Object.entries(bucket.byTable || {});
+      entries.sort((a, b) => b[1] - a[1]);
+      return entries.slice(0, limit).map(([table_name, count]) => ({ table_name, count }));
+    };
+
+    const data = {
+      today: {
+        total: today.total,
+        byTable: today.byTable,
+        topTables: toTopTables(today),
+      },
+      month: {
+        total: month.total,
+        byTable: month.byTable,
+        topTables: toTopTables(month),
+      },
+      year: {
+        total: year.total,
+        byTable: year.byTable,
+        topTables: toTopTables(year),
+      },
+      recent,
+      generatedAt: now.toISOString(),
+    };
+
+    return res.status(200).json({ success: true, data });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching my activity statistics",
+      error: error.message,
+    });
+  }
+};
+
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * GET /api/statistics/my-activity/chart?year=2026&month=3
+ * Returns bar data for the authenticated user's audit activity:
+ * - If month is provided (1-12): one bar per day in that month (name "1".."31", count).
+ * - If only year: one bar per month Jan–Dec (name "Jan".."Dec", count).
+ */
+const getMyActivityChart = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Authentication required" });
+    }
+
+    const now = new Date();
+    const year = Math.min(9999, Math.max(1, parseInt(req.query.year, 10) || now.getFullYear()));
+    const monthParam = req.query.month;
+    const month = monthParam != null ? Math.min(12, Math.max(1, parseInt(monthParam, 10))) : null;
+
+    let bars;
+
+    if (month != null) {
+      const daysInMonth = new Date(year, month, 0).getDate();
+      const dayCounts = await Promise.all(
+        Array.from({ length: daysInMonth }, (_, i) => {
+          const day = i + 1;
+          const start = new Date(year, month - 1, day, 0, 0, 0, 0);
+          const end = new Date(year, month - 1, day, 23, 59, 59, 999);
+          return AuditLog.count({
+            where: {
+              user_id: userId,
+              timestamp: {
+                [Op.gte]: start,
+                [Op.lte]: end,
+              },
+            },
+          }).then((count) => ({ name: String(day), count }));
+        })
+      );
+      bars = dayCounts;
+    } else {
+      const monthCounts = await Promise.all(
+        Array.from({ length: 12 }, (_, i) => {
+          const start = new Date(year, i, 1, 0, 0, 0, 0);
+          const end = new Date(year, i + 1, 0, 23, 59, 59, 999);
+          return AuditLog.count({
+            where: {
+              user_id: userId,
+              timestamp: {
+                [Op.gte]: start,
+                [Op.lte]: end,
+              },
+            },
+          }).then((count) => ({ name: MONTH_NAMES[i], count }));
+        })
+      );
+      bars = monthCounts;
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        bars,
+        year,
+        month: month ?? null,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching my activity chart",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * GET /api/statistics/my-activity/detail?year=2026&month=3&day=5
+ * Returns aggregated activity for the authenticated user in a specific period:
+ * - If day is provided: that specific day
+ * - Else if month is provided: that month
+ * - Else: whole year
+ * Response rows: [{ table_name, count }]
+ */
+const getMyActivityDetail = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Authentication required" });
+    }
+
+    const now = new Date();
+    const year = Math.min(9999, Math.max(1, parseInt(req.query.year, 10) || now.getFullYear()));
+    const monthParam = req.query.month;
+    const dayParam = req.query.day;
+
+    let start;
+    let end;
+
+    if (dayParam != null && monthParam != null) {
+      const month = Math.min(12, Math.max(1, parseInt(monthParam, 10)));
+      const day = Math.min(31, Math.max(1, parseInt(dayParam, 10)));
+      start = new Date(year, month - 1, day, 0, 0, 0, 0);
+      end = new Date(year, month - 1, day, 23, 59, 59, 999);
+    } else if (monthParam != null) {
+      const month = Math.min(12, Math.max(1, parseInt(monthParam, 10)));
+      start = new Date(year, month - 1, 1, 0, 0, 0, 0);
+      end = new Date(year, month, 0, 23, 59, 59, 999);
+    } else {
+      start = new Date(year, 0, 1, 0, 0, 0, 0);
+      end = new Date(year, 11, 31, 23, 59, 59, 999);
+    }
+
+    const rows = await AuditLog.findAll({
+      attributes: [
+        "table_name",
+        [sequelize.fn("COUNT", sequelize.col("id")), "count"],
+      ],
+      where: {
+        user_id: userId,
+        timestamp: {
+          [Op.gte]: start,
+          [Op.lte]: end,
+        },
+      },
+      group: ["table_name"],
+      order: [[sequelize.literal("count"), "DESC"]],
+      raw: true,
+    });
+
+    const normalized = rows.map((r) => ({
+      table_name: r.table_name || "other",
+      count: Number(r.count) || 0,
+    }));
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        year,
+        month: monthParam != null ? Number(monthParam) : null,
+        day: dayParam != null ? Number(dayParam) : null,
+        rows: normalized,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching my activity detail",
+      error: error.message,
+    });
+  }
+};
+
+module.exports = {
+  getAll,
+  getAppointmentsChart,
+  getRevenueChart,
+  getPharmacyChart,
+  getAdmissionsChart,
+  getMyActivity,
+  getMyActivityChart,
+   getMyActivityDetail,
+};

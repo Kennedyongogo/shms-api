@@ -62,6 +62,9 @@ const serviceRoutes = require("./routes/serviceRoutes");
 const newsRoutes = require("./routes/newsRoutes");
 const eventRoutes = require("./routes/eventRoutes");
 const eventRegistrationRoutes = require("./routes/eventRegistrationRoutes");
+const liveDemoVideoRoutes = require("./routes/liveDemoVideoRoutes");
+const carlvyneAccountRoutes = require("./routes/carlvyneAccountRoutes");
+const carlvyneAuthRoutes = require("./routes/carlvyneAuthRoutes");
 
 const notificationRoutes = require("./routes/notificationRoutes");
 const reportRoutes = require("./routes/reportRoutes");
@@ -139,6 +142,9 @@ app.use("/api/services", serviceRoutes);
 app.use("/api/news", newsRoutes);
 app.use("/api/events", eventRoutes);
 app.use("/api/event-registrations", eventRegistrationRoutes);
+app.use("/api/live-demo-videos", liveDemoVideoRoutes);
+app.use("/api/carlvyne-accounts", carlvyneAccountRoutes);
+app.use("/api/carlvyne-auth", carlvyneAuthRoutes);
 
 app.use("/api/notifications", authenticateUser, notificationRoutes);
 app.use("/api/reports", authenticateUser, reportRoutes);
@@ -186,6 +192,8 @@ const createUploadDirectories = () => {
     path.join(__dirname, "..", "uploads", "events", "images"),
     path.join(__dirname, "..", "uploads", "news", "featured"),
     path.join(__dirname, "..", "uploads", "news", "images"),
+    path.join(__dirname, "..", "uploads", "demo-videos"),
+    path.join(__dirname, "..", "uploads", "carlvyne", "profile-images"),
   ];
 
   uploadDirs.forEach((dir) => {

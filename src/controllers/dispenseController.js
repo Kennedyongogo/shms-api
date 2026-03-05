@@ -70,40 +70,58 @@ const recordDispensing = async (req, res) => {
       isSilver = hospital?.subscription_package === "silver";
     }
 
-    // Validate: every item must be linked to inventory and have enough stock (unless Silver: then allow unlinked, no stock deduction)
+    // Validate stock based on package
     const insufficient = [];
     const notLinked = [];
-    for (const item of pres.items) {
-      const med = item.medication;
-      if (!med) {
-        notLinked.push(item.id);
-        continue;
+    if (isSilver) {
+      // Silver: use Medication.current_quantity as simple pharmacy stock, inventory linkage optional
+      for (const item of pres.items) {
+        const med = item.medication;
+        if (!med) continue;
+        const qty = item.quantity || 1;
+        const available = Number(med.current_quantity ?? 0);
+        if (!Number.isFinite(available) || available < qty) {
+          insufficient.push({
+            medication: med.name,
+            required: qty,
+            available: available || 0,
+          });
+        }
       }
-      if (!med.inventory_item_id || !med.inventoryItem) {
-        notLinked.push(med.name || med.id);
-        continue;
+    } else {
+      // Gold: require inventory linkage and validate InventoryItem quantities
+      for (const item of pres.items) {
+        const med = item.medication;
+        if (!med) {
+          notLinked.push(item.id);
+          continue;
+        }
+        if (!med.inventory_item_id || !med.inventoryItem) {
+          notLinked.push(med.name || med.id);
+          continue;
+        }
+        const qty = item.quantity || 1;
+        const inPharmacy = med.inventoryItem.quantity_in_pharmacy ?? 0;
+        const inMain = med.inventoryItem.quantity_available ?? 0;
+        const availableToDispense = inPharmacy + inMain;
+        if (availableToDispense < qty) {
+          insufficient.push({
+            medication: med.name,
+            required: qty,
+            available: availableToDispense,
+            in_pharmacy: inPharmacy,
+            in_main: inMain,
+          });
+        }
       }
-      const qty = item.quantity || 1;
-      const inPharmacy = med.inventoryItem.quantity_in_pharmacy ?? 0;
-      const inMain = med.inventoryItem.quantity_available ?? 0;
-      const availableToDispense = inPharmacy + inMain;
-      if (availableToDispense < qty) {
-        insufficient.push({
-          medication: med.name,
-          required: qty,
-          available: availableToDispense,
-          in_pharmacy: inPharmacy,
-          in_main: inMain,
+      if (notLinked.length) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Some medications are not linked to inventory. Link Medication to InventoryItem (inventory_item_id) before dispensing.",
+          notLinked,
         });
       }
-    }
-    if (!isSilver && notLinked.length) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Some medications are not linked to inventory. Link Medication to InventoryItem (inventory_item_id) before dispensing.",
-        notLinked,
-      });
     }
     if (insufficient.length) {
       return res.status(400).json({
@@ -135,33 +153,65 @@ const recordDispensing = async (req, res) => {
         { transaction: t }
       );
 
-      // Group by inventory_item_id so duplicate medications on the same prescription deduct once (skip unlinked for Silver)
-      const byInventoryItem = new Map();
-      for (const item of pres.items) {
-        const invId = item.medication?.inventory_item_id;
-        if (!invId) continue;
-        const qty = item.quantity || 1;
-        byInventoryItem.set(invId, (byInventoryItem.get(invId) || 0) + qty);
-      }
-
-      for (const [inventoryItemId, totalQty] of byInventoryItem) {
-        await InventoryTransaction.create(
-          {
-            inventory_item_id: inventoryItemId,
-            transaction_type: "out",
-            quantity: totalQty,
-            transaction_date: dispenseDate,
-          },
-          { transaction: t }
-        );
-        const invItem = await InventoryItem.findByPk(inventoryItemId, { transaction: t });
-        const fromPharmacy = Math.min(invItem.quantity_in_pharmacy ?? 0, totalQty);
-        const fromMain = totalQty - fromPharmacy;
-        if (fromPharmacy > 0) {
-          await InventoryItem.decrement("quantity_in_pharmacy", { by: fromPharmacy, where: { id: inventoryItemId }, transaction: t });
+      if (isSilver) {
+        // Silver: decrement Medication.current_quantity directly per medication
+        const byMedication = new Map();
+        for (const item of pres.items) {
+          const medId = item.medication?.id;
+          if (!medId) continue;
+          const qty = item.quantity || 1;
+          byMedication.set(medId, (byMedication.get(medId) || 0) + qty);
         }
-        if (fromMain > 0) {
-          await InventoryItem.decrement("quantity_available", { by: fromMain, where: { id: inventoryItemId }, transaction: t });
+        for (const [medicationId, totalQty] of byMedication) {
+          const med = await Medication.findByPk(medicationId, { transaction: t, lock: t.LOCK.UPDATE });
+          if (!med) continue;
+          const available = Number(med.current_quantity ?? 0);
+          if (!Number.isFinite(available) || available < totalQty) {
+            throw new Error(`Insufficient stock for medication ${med.name || medicationId} during dispensing.`);
+          }
+          await Medication.decrement("current_quantity", {
+            by: totalQty,
+            where: { id: medicationId },
+            transaction: t,
+          });
+        }
+      } else {
+        // Gold: existing behavior — decrement InventoryItem quantities and record transactions
+        const byInventoryItem = new Map();
+        for (const item of pres.items) {
+          const invId = item.medication?.inventory_item_id;
+          if (!invId) continue;
+          const qty = item.quantity || 1;
+          byInventoryItem.set(invId, (byInventoryItem.get(invId) || 0) + qty);
+        }
+
+        for (const [inventoryItemId, totalQty] of byInventoryItem) {
+          await InventoryTransaction.create(
+            {
+              inventory_item_id: inventoryItemId,
+              transaction_type: "out",
+              quantity: totalQty,
+              transaction_date: dispenseDate,
+            },
+            { transaction: t }
+          );
+          const invItem = await InventoryItem.findByPk(inventoryItemId, { transaction: t });
+          const fromPharmacy = Math.min(invItem.quantity_in_pharmacy ?? 0, totalQty);
+          const fromMain = totalQty - fromPharmacy;
+          if (fromPharmacy > 0) {
+            await InventoryItem.decrement("quantity_in_pharmacy", {
+              by: fromPharmacy,
+              where: { id: inventoryItemId },
+              transaction: t,
+            });
+          }
+          if (fromMain > 0) {
+            await InventoryItem.decrement("quantity_available", {
+              by: fromMain,
+              where: { id: inventoryItemId },
+              transaction: t,
+            });
+          }
         }
       }
 

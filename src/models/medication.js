@@ -25,10 +25,32 @@ module.exports = (sequelize) => {
         type: DataTypes.DECIMAL(12, 2),
         allowNull: true,
       },
+      unit: {
+        type: DataTypes.STRING(50),
+        allowNull: true,
+        comment: "Unit for silver hospitals (e.g. tablet, bottle, ml).",
+      },
+      pack_size: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        comment: "Units per pack for silver hospitals (e.g. 20 tablets per pack).",
+      },
       inventory_item_id: {
         type: DataTypes.UUID,
         allowNull: true,
         references: { model: "inventory_items", key: "id" },
+      },
+      initial_quantity: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0,
+        comment: "Initial stock for silver package hospitals when inventory module is not used.",
+      },
+      current_quantity: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0,
+        comment: "Current stock for silver package hospitals; decremented on dispensing.",
       },
       hospital_id: {
         type: DataTypes.UUID,
