@@ -140,7 +140,7 @@ const initializeModels = async () => {
 
     // 1) AUTH & ACCESS CONTROL
     await Role.sync({ force: false, alter: false });
-    await Permission.sync({ force: true, alter: false });
+    await Permission.sync({ force: false, alter: false });
     await RolePermission.sync({ force: false, alter: false });
     await RoleMenuItem.sync({ force: false, alter: false });
     await User.sync({ force: false, alter: false });
