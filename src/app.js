@@ -71,6 +71,7 @@ const reportRoutes = require("./routes/reportRoutes");
 const auditRoutes = require("./routes/auditRoutes");
 const statisticsRoutes = require("./routes/statisticsRoutes");
 const settingsRoutes = require("./routes/settingsRoutes");
+const subscriptionRoutes = require("./routes/subscriptionRoutes");
 
 const app = express();
 
@@ -86,6 +87,7 @@ app.use("/uploads", express.static(uploadsRoot));
 // API routes
 console.log("🔗 Registering API routes...");
 app.use("/api/auth", authRoutes);
+app.use("/api/subscription", subscriptionRoutes);
 app.use("/api/patient-auth", patientAuthRoutes);
 // Users/Roles: any authenticated user can view (GET); only Super Admin can modify (enforced inside route files)
 app.use("/api/users", authenticateUser, userRoutes);

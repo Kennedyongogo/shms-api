@@ -5,6 +5,7 @@ const { User, Role, Hospital, RoleMenuItem } = require("../models");
 const config = require("../config/config");
 const { auditLog } = require("../utils/auditLog");
 const { getMenuItemsForRole, filterMenuItemsByPackage } = require("../utils/menuItems");
+const { isHospitalSubscriptionActive, getSubscriptionStatus, getTrialEndsAt } = require("../utils/subscriptionStatus");
 const { deleteFile, toRelativeUploadPath } = require("../middleware/upload");
 const { ALL_MENU_KEYS } = require("../constants/menuKeys");
 
@@ -134,6 +135,7 @@ const registerOrganization = async (req, res) => {
     }
 
     const logoPath = req.file ? toRelativeUploadPath(req.file.path) : null;
+    const trialEndsAt = getTrialEndsAt();
     const hospital = await Hospital.create({
       name: String(hospitalPayload.name).trim(),
       address: hospitalPayload.address ? String(hospitalPayload.address).trim() : null,
@@ -141,6 +143,8 @@ const registerOrganization = async (req, res) => {
       email: hospitalPayload.email ? String(hospitalPayload.email).trim() : null,
       logo_path: logoPath,
       subscription_package: packageVal,
+      trial_ends_at: trialEndsAt,
+      subscription_ends_at: null,
     });
 
     const superAdminRole = await Role.create({
@@ -172,12 +176,21 @@ const registerOrganization = async (req, res) => {
       { action: "REGISTER_ORGANIZATION", table_name: "Hospital", record_id: hospital.id }
     );
 
+    const subscriptionStatus = getSubscriptionStatus(hospital);
     return res.status(201).json({
       success: true,
       data: {
         user: sanitizeUser(user),
         role,
-        hospital: { id: hospital.id, name: hospital.name, subscription_package: hospital.subscription_package, primary_color: hospital.primary_color },
+        hospital: {
+          id: hospital.id,
+          name: hospital.name,
+          subscription_package: hospital.subscription_package,
+          primary_color: hospital.primary_color,
+          trial_ends_at: hospital.trial_ends_at,
+          subscription_ends_at: hospital.subscription_ends_at,
+          subscription_status: subscriptionStatus,
+        },
         token,
         menuItems,
       },
@@ -257,11 +270,6 @@ const login = async (req, res) => {
       return res.status(403).json({ success: false, message: "Account is not active" });
     }
 
-    await user.update({ last_login: new Date() });
-    const token = jwt.sign({ id: user.id, type: "user" }, config.jwtSecret, { expiresIn: "7d" });
-    const role = await Role.findByPk(user.role_id);
-    let menuItems = await getMenuItemsForRole(role?.id, role?.name);
-
     let hospital = null;
     if (user.hospital_id) {
       try {
@@ -270,16 +278,36 @@ const login = async (req, res) => {
         console.error("[login] Hospital fetch failed (e.g. missing column?):", err.message);
       }
     }
+
+    if (hospital && !isHospitalSubscriptionActive(hospital)) {
+      const subscriptionStatus = getSubscriptionStatus(hospital);
+      return res.status(403).json({
+        success: false,
+        message: subscriptionStatus.message || "Subscription has expired. Renew to continue using the system.",
+        code: "SUBSCRIPTION_EXPIRED",
+        subscription_status: subscriptionStatus,
+      });
+    }
+
+    await user.update({ last_login: new Date() });
+    const token = jwt.sign({ id: user.id, type: "user" }, config.jwtSecret, { expiresIn: "7d" });
+    const role = await Role.findByPk(user.role_id);
+    let menuItems = await getMenuItemsForRole(role?.id, role?.name);
+
     if (hospital && hospital.subscription_package) {
       menuItems = filterMenuItemsByPackage(menuItems, hospital.subscription_package);
     }
 
+    const subscriptionStatus = hospital ? getSubscriptionStatus(hospital) : null;
     const hospitalPayload = hospital
       ? {
           id: hospital.id,
           name: hospital.name,
           subscription_package: hospital.subscription_package || "silver",
           primary_color: hospital.primary_color ?? "#00897B",
+          trial_ends_at: hospital.trial_ends_at,
+          subscription_ends_at: hospital.subscription_ends_at,
+          subscription_status: subscriptionStatus,
         }
       : null;
 
@@ -370,16 +398,38 @@ const me = async (req, res) => {
     const role = await Role.findByPk(user.role_id);
     let menuItems = await getMenuItemsForRole(role?.id, role?.name);
     const hospital = user.hospital || (user.hospital_id ? await Hospital.findByPk(user.hospital_id) : null);
+
+    if (hospital && !isHospitalSubscriptionActive(hospital)) {
+      const subscriptionStatus = getSubscriptionStatus(hospital);
+      return res.status(403).json({
+        success: false,
+        message: subscriptionStatus.message || "Subscription has expired. Renew to continue using the system.",
+        code: "SUBSCRIPTION_EXPIRED",
+        subscription_status: subscriptionStatus,
+      });
+    }
+
     if (hospital && hospital.subscription_package) {
       menuItems = filterMenuItemsByPackage(menuItems, hospital.subscription_package);
     }
+    const subscriptionStatus = hospital ? getSubscriptionStatus(hospital) : null;
     return res.status(200).json({
       success: true,
       data: {
         user: sanitizeUser(user),
         role: role || null,
         menuItems,
-        hospital: hospital ? { id: hospital.id, name: hospital.name, subscription_package: hospital.subscription_package, primary_color: hospital.primary_color } : null,
+        hospital: hospital
+          ? {
+              id: hospital.id,
+              name: hospital.name,
+              subscription_package: hospital.subscription_package,
+              primary_color: hospital.primary_color,
+              trial_ends_at: hospital.trial_ends_at,
+              subscription_ends_at: hospital.subscription_ends_at,
+              subscription_status: subscriptionStatus,
+            }
+          : null,
       },
     });
   } catch (error) {

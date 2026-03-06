@@ -140,7 +140,7 @@ const initializeModels = async () => {
 
     // 1) AUTH & ACCESS CONTROL
     await Role.sync({ force: false, alter: false });
-    await Permission.sync({ force: false, alter: false });
+    await Permission.sync({ force: true, alter: false });
     await RolePermission.sync({ force: false, alter: false });
     await RoleMenuItem.sync({ force: false, alter: false });
     await User.sync({ force: false, alter: false });
@@ -180,20 +180,7 @@ const initializeModels = async () => {
     await Medication.sync({ force: false, alter: false });
     await Prescription.sync({ force: false, alter: false });
     await PrescriptionItem.sync({ force: false, alter: false });
-    await DispenseRecord.sync({ force: false, alter: false });
-
-    // 9) INVENTORY & SUPPLY CHAIN
-    await InventoryItem.sync({ force: false, alter: false });
-    await InventoryTransaction.sync({ force: false, alter: false });
-    await Supplier.sync({ force: false, alter: false });
-    await PurchaseOrder.sync({ force: false, alter: false });
-    await PurchaseOrderItem.sync({ force: false, alter: false });
-
-    // 10) BILLING & FINANCE
-    await Bill.sync({ force: false, alter: false });
-    await BillItem.sync({ force: true, alter: false });
-    await Payment.sync({ force: false, alter: false });
-    await InsuranceClaim.sync({ force: false, alter: false });
+    await DispenseRecord.sync({ force: false, alter: false }); 
 
     // 11) INPATIENT MODULE
     await Admission.sync({ force: false, alter: false });

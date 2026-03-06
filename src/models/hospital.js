@@ -35,6 +35,16 @@ module.exports = (sequelize) => {
         allowNull: false,
         defaultValue: "silver",
       },
+      trial_ends_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        comment: "End of 7-day trial. After this, subscription_ends_at must be set (paid) to allow login.",
+      },
+      subscription_ends_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        comment: "End of current paid period. When past, all users in this hospital are blocked from login until renewed.",
+      },
       primary_color: {
         type: DataTypes.STRING(20),
         allowNull: true,
@@ -44,7 +54,12 @@ module.exports = (sequelize) => {
     {
       tableName: "hospitals",
       timestamps: true,
-      indexes: [{ fields: ["name"] }, { fields: ["subscription_package"] }],
+      indexes: [
+        { fields: ["name"] },
+        { fields: ["subscription_package"] },
+        { fields: ["trial_ends_at"] },
+        { fields: ["subscription_ends_at"] },
+      ],
     }
   );
 
