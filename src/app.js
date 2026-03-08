@@ -64,6 +64,7 @@ const eventRoutes = require("./routes/eventRoutes");
 const eventRegistrationRoutes = require("./routes/eventRegistrationRoutes");
 const liveDemoVideoRoutes = require("./routes/liveDemoVideoRoutes");
 const testimonialRoutes = require("./routes/testimonialRoutes");
+const newsletterRoutes = require("./routes/newsletterRoutes");
 const carlvyneAccountRoutes = require("./routes/carlvyneAccountRoutes");
 const carlvyneAuthRoutes = require("./routes/carlvyneAuthRoutes");
 
@@ -147,6 +148,7 @@ app.use("/api/events", eventRoutes);
 app.use("/api/event-registrations", eventRegistrationRoutes);
 app.use("/api/live-demo-videos", liveDemoVideoRoutes);
 app.use("/api/testimonials", testimonialRoutes);
+app.use("/api/newsletter", newsletterRoutes);
 app.use("/api/carlvyne-accounts", carlvyneAccountRoutes);
 app.use("/api/carlvyne-auth", carlvyneAuthRoutes);
 

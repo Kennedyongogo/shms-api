@@ -73,6 +73,8 @@ const NewsImage = require("./newsImage")(sequelize);
 const LiveDemoVideo = require("./liveDemoVideo")(sequelize);
 const CarlvyneAccount = require("./carlvyneAccount")(sequelize);
 const Testimonial = require("./testimonial")(sequelize);
+const NewsletterSubscriber = require("./newsletterSubscriber")(sequelize);
+const NewsletterCampaign = require("./newsletterCampaign")(sequelize);
 
 const models = {
   Role,
@@ -131,6 +133,8 @@ const models = {
   LiveDemoVideo,
   CarlvyneAccount,
   Testimonial,
+  NewsletterSubscriber,
+  NewsletterCampaign,
 };
 
 // Initialize models in correct order (parent tables first)
@@ -210,6 +214,8 @@ const initializeModels = async () => {
     await LiveDemoVideo.sync({ force: false, alter: false });
     await CarlvyneAccount.sync({ force: false, alter: false });
     await Testimonial.sync({ force: false, alter: false });
+    await NewsletterSubscriber.sync({ force: false, alter: false });
+    await NewsletterCampaign.sync({ force: false, alter: false });
 
     console.log("✅ All models synced successfully");
   } catch (error) {
