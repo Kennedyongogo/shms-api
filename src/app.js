@@ -280,7 +280,15 @@ Answer based only on the system information above.`;
       }),
     });
 
+    // If Ollama returns a non-2xx status, log the full body for debugging
     if (!ollamaResponse.ok) {
+      const errorBody = await ollamaResponse.text().catch(() => "");
+      console.error(
+        "❌ Ollama /api/generate error:",
+        ollamaResponse.status,
+        ollamaResponse.statusText,
+        errorBody
+      );
       throw new Error(`Ollama HTTP ${ollamaResponse.status}`);
     }
 
