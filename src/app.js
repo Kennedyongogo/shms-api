@@ -223,6 +223,30 @@ async function getAiContextFromDb() {
   return "";
 }
 
+function getOllamaBaseUrl() {
+  return (process.env.OLLAMA_BASE_URL || "http://localhost:11434").replace(/\/$/, "");
+}
+
+// GET /api/ai/ollama-status — check configured URL and if Ollama is reachable (for debugging on server)
+app.get("/api/ai/ollama-status", async (req, res) => {
+  const ollamaBaseUrl = getOllamaBaseUrl();
+  const result = { ollamaBaseUrl, reachable: false, envSet: !!process.env.OLLAMA_BASE_URL };
+  try {
+    const r = await fetch(`${ollamaBaseUrl}/api/tags`, { method: "GET" });
+    result.reachable = r.ok;
+    if (r.ok) {
+      const data = await r.json();
+      result.models = (data.models || []).map((m) => m.name);
+    } else {
+      result.status = r.status;
+      result.statusText = r.statusText;
+    }
+  } catch (err) {
+    result.error = err.cause?.code || err.message || String(err);
+  }
+  res.json(result);
+});
+
 app.post("/api/ai/guest-chat", async (req, res) => {
   try {
     const { message } = req.body || {};
@@ -241,7 +265,7 @@ User question: ${message}
 
 Answer based only on the system information above.`;
 
-    const ollamaBaseUrl = (process.env.OLLAMA_BASE_URL || "http://localhost:11434").replace(/\/$/, "");
+    const ollamaBaseUrl = getOllamaBaseUrl();
     const ollamaResponse = await fetch(`${ollamaBaseUrl}/api/generate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -275,7 +299,9 @@ Answer based only on the system information above.`;
       message: aiText,
     });
   } catch (error) {
+    const ollamaBaseUrl = getOllamaBaseUrl();
     console.error("❌ Guest AI chat error:", error);
+    console.error("   Ollama URL used:", ollamaBaseUrl, "| OLLAMA_BASE_URL set:", !!process.env.OLLAMA_BASE_URL);
 
     return res.status(500).json({
       success: false,
@@ -359,4 +385,4 @@ const initializeApp = async () => {
 // Export the initialization promise
 const appInitialized = initializeApp();
 
-module.exports = { app, appInitialized };
+module.exports = { app, appInitialized, getOllamaBaseUrl };

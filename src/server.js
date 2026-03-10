@@ -1,4 +1,4 @@
-const { app, appInitialized } = require("./app");
+const { app, appInitialized, getOllamaBaseUrl } = require("./app");
 const config = require("./config/config");
 const { testConnections } = require("./config/database");
 
@@ -19,6 +19,8 @@ async function createServer() {
         `🗄️  Database: ${config.database.direct.database}@${config.database.direct.host}:${config.database.direct.port}`
       );
       console.log(`🌐 API Base URL: http://localhost:${PORT}/api`);
+      const ollamaUrl = getOllamaBaseUrl();
+      console.log(`🤖 Ollama URL: ${ollamaUrl} (OLLAMA_BASE_URL ${process.env.OLLAMA_BASE_URL ? "set" : "not set"})`);
     });
 
     // Graceful shutdown for individual workers
