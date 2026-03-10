@@ -69,6 +69,7 @@ const carlvyneAccountRoutes = require("./routes/carlvyneAccountRoutes");
 const carlvyneAuthRoutes = require("./routes/carlvyneAuthRoutes");
 
 const notificationRoutes = require("./routes/notificationRoutes");
+const chatRoutes = require("./routes/chatRoutes");
 const reportRoutes = require("./routes/reportRoutes");
 const auditRoutes = require("./routes/auditRoutes");
 const statisticsRoutes = require("./routes/statisticsRoutes");
@@ -153,6 +154,7 @@ app.use("/api/carlvyne-accounts", carlvyneAccountRoutes);
 app.use("/api/carlvyne-auth", carlvyneAuthRoutes);
 
 app.use("/api/notifications", authenticateUser, notificationRoutes);
+app.use("/api/chat", chatRoutes);
 app.use("/api/reports", authenticateUser, reportRoutes);
 app.use("/api/audit-logs", authenticateUser, auditRoutes);
 app.use("/api/statistics", authenticateUser, statisticsRoutes);

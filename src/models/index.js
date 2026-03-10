@@ -76,6 +76,12 @@ const Testimonial = require("./testimonial")(sequelize);
 const NewsletterSubscriber = require("./newsletterSubscriber")(sequelize);
 const NewsletterCampaign = require("./newsletterCampaign")(sequelize);
 
+// Internal chat & helpdesk (per hospital)
+const ChatRoom = require("./chatRoom")(sequelize);
+const ChatParticipant = require("./chatParticipant")(sequelize);
+const ChatMessage = require("./chatMessage")(sequelize);
+const SupportTicket = require("./supportTicket")(sequelize);
+
 const models = {
   Role,
   Permission,
@@ -135,6 +141,10 @@ const models = {
   Testimonial,
   NewsletterSubscriber,
   NewsletterCampaign,
+  ChatRoom,
+  ChatParticipant,
+  ChatMessage,
+  SupportTicket,
 };
 
 // Initialize models in correct order (parent tables first)
@@ -216,6 +226,12 @@ const initializeModels = async () => {
     await Testimonial.sync({ force: false, alter: false });
     await NewsletterSubscriber.sync({ force: false, alter: false });
     await NewsletterCampaign.sync({ force: false, alter: false });
+
+    // 15) INTERNAL CHAT & HELPDESK
+    await ChatRoom.sync({ force: false, alter: false });
+    await ChatParticipant.sync({ force: false, alter: false });
+    await ChatMessage.sync({ force: false, alter: false });
+    await SupportTicket.sync({ force: false, alter: false });
 
     console.log("✅ All models synced successfully");
   } catch (error) {
@@ -814,6 +830,31 @@ const setupAssociations = () => {
       as: "createdAppointments",
     });
     Appointment.belongsTo(User, { foreignKey: "created_by", as: "createdBy" });
+
+    // Internal chat & helpdesk
+    Hospital.hasMany(ChatRoom, { foreignKey: "hospital_id", as: "chatRooms" });
+    ChatRoom.belongsTo(Hospital, { foreignKey: "hospital_id", as: "hospital" });
+    User.hasMany(ChatRoom, { foreignKey: "created_by", as: "createdChatRooms" });
+    ChatRoom.belongsTo(User, { foreignKey: "created_by", as: "creator" });
+
+    ChatRoom.hasMany(ChatParticipant, { foreignKey: "chat_room_id", as: "participants", onDelete: "CASCADE" });
+    ChatParticipant.belongsTo(ChatRoom, { foreignKey: "chat_room_id", as: "chatRoom" });
+    User.hasMany(ChatParticipant, { foreignKey: "user_id", as: "chatParticipations", onDelete: "CASCADE" });
+    ChatParticipant.belongsTo(User, { foreignKey: "user_id", as: "user" });
+
+    ChatRoom.hasMany(ChatMessage, { foreignKey: "chat_room_id", as: "messages", onDelete: "CASCADE" });
+    ChatMessage.belongsTo(ChatRoom, { foreignKey: "chat_room_id", as: "chatRoom" });
+    User.hasMany(ChatMessage, { foreignKey: "sender_id", as: "sentChatMessages", onDelete: "CASCADE" });
+    ChatMessage.belongsTo(User, { foreignKey: "sender_id", as: "sender" });
+
+    Hospital.hasMany(SupportTicket, { foreignKey: "hospital_id", as: "supportTickets" });
+    SupportTicket.belongsTo(Hospital, { foreignKey: "hospital_id", as: "hospital" });
+    User.hasMany(SupportTicket, { foreignKey: "created_by", as: "createdTickets" });
+    SupportTicket.belongsTo(User, { foreignKey: "created_by", as: "createdByUser" });
+    User.hasMany(SupportTicket, { foreignKey: "assigned_to", as: "assignedTickets" });
+    SupportTicket.belongsTo(User, { foreignKey: "assigned_to", as: "assignedToUser" });
+    ChatRoom.hasOne(SupportTicket, { foreignKey: "chat_room_id", as: "supportTicket" });
+    SupportTicket.belongsTo(ChatRoom, { foreignKey: "chat_room_id", as: "chatRoom" });
 
     console.log("✅ All associations set up successfully");
   } catch (error) {

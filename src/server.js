@@ -1,6 +1,8 @@
 const { app, appInitialized, getOllamaBaseUrl } = require("./app");
 const config = require("./config/config");
 const { testConnections } = require("./config/database");
+const { Server } = require("socket.io");
+const { attachChatSocket } = require("./socket/chat");
 
 const PORT = process.env.PORT || 4000;
 
@@ -22,6 +24,15 @@ async function createServer() {
       const ollamaUrl = getOllamaBaseUrl();
       console.log(`🤖 Ollama URL: ${ollamaUrl} (OLLAMA_BASE_URL ${process.env.OLLAMA_BASE_URL ? "set" : "not set"})`);
     });
+
+    // Socket.IO for real-time chat (same server, so no CORS if same origin)
+    const io = new Server(server, {
+      cors: { origin: true },
+      path: "/socket.io",
+    });
+    app.set("io", io);
+    attachChatSocket(io);
+    console.log("💬 Chat Socket.IO attached");
 
     // Graceful shutdown for individual workers
     process.on("SIGTERM", () => {
