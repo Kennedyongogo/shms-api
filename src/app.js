@@ -270,7 +270,7 @@ Answer based only on the system information above.`;
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "llama3.2:3b",
+        model: "tinyllama",
         prompt: systemPrompt,
         stream: false,
         options: {
