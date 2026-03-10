@@ -170,6 +170,119 @@ app.get("/api/health", (req, res) => {
   });
 });
 
+// Public AI assistant for pre-login and logged-in users (no authentication required)
+// Rich system context so the model gives accurate answers about this SHMS.
+const AI_SYSTEM_CONTEXT = `
+You are the AI assistant for Carlvyne Smart Health Management System (Carlvyne SHMS). Answer only from the facts below.
+
+=== EXACT MODULES AND NAVIGATION (use these names and paths) ===
+- Dashboard: /dashboard — overview and quick stats.
+- Hospital: /hospitals — manage hospital(s) and organization (Super Admin).
+- Appointments: /appointments — list and manage appointments. To record a consultation: go to Appointments then "Record consultation" or /appointments/record-consultation. View a consultation: /appointments/consultation/:id.
+- Patients: /patients — patient list and records. Patient reports: /patients/:patientId/reports.
+- Laboratory: /laboratory — lab tests, orders, and results.
+- Pharmacy: /pharmacy — medications, prescriptions, dispensing.
+- Ward & Admissions: /ward — wards, beds, admissions.
+- Diet & Meals: /diet — diet types, patient diet orders, meal plans, meal delivery.
+- Inventory: /inventory — inventory items, transactions, suppliers, purchase orders.
+- Billing & Payments: /billing — bills, payments, insurance claims (M-Pesa supported).
+- Users & Roles: /users — staff users, roles, and which navbar menu items each role can see.
+- Audit log: /audit-logs — system audit trail.
+- Settings: /settings — system settings (Super Admin).
+- Account: /account — own profile (after login).
+
+=== HOW USERS ACCESS THE SYSTEM ===
+- Before login: public site has Sign in, Register, Forgot password. Register creates an organization (hospital) and a Super Admin user for that organization.
+- After login: sidebar shows only the menu items allowed for the user's role (e.g. Silver package: dashboard, hospitals, patients, appointments, laboratory, pharmacy, billing, users, settings; Gold adds ward, diet, inventory, audit-logs).
+- Do NOT invent menu names or URLs; use only the ones listed above.
+
+=== RULES ===
+- You do NOT see or access any real patient data, appointments, or records; say they must log in to see their own data.
+- For medical emergencies, tell the user to seek immediate medical care or call emergency services.
+- If asked about something not in this system (e.g. another product), say you only know about Carlvyne SHMS.
+- Be concise and friendly. Answer in 2–4 short sentences when possible.
+`;
+
+async function getAiContextFromDb() {
+  try {
+    const { Department } = require("./models");
+    const rows = await Department.findAll({
+      attributes: ["name"],
+      limit: 25,
+      order: [["name", "ASC"]],
+    });
+    if (rows && rows.length > 0) {
+      const names = [...new Set(rows.map((r) => r.name).filter(Boolean))];
+      if (names.length > 0) {
+        return `\n=== SAMPLE DEPARTMENTS IN THIS SYSTEM (from database) ===\n${names.join(", ")}\n`;
+      }
+    }
+  } catch (err) {
+    // ignore
+  }
+  return "";
+}
+
+app.post("/api/ai/guest-chat", async (req, res) => {
+  try {
+    const { message } = req.body || {};
+
+    if (!message || typeof message !== "string" || !message.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Message is required",
+      });
+    }
+
+    const dbContext = await getAiContextFromDb();
+    const systemPrompt = `${AI_SYSTEM_CONTEXT}${dbContext}
+
+User question: ${message}
+
+Answer based only on the system information above.`;
+
+    const ollamaResponse = await fetch("http://localhost:11434/api/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "llama3.2:3b",
+        prompt: systemPrompt,
+        stream: false,
+        options: {
+          temperature: 0.3,
+          num_predict: 400,
+        },
+      }),
+    });
+
+    if (!ollamaResponse.ok) {
+      throw new Error(`Ollama HTTP ${ollamaResponse.status}`);
+    }
+
+    const ollamaData = await ollamaResponse.json();
+    const aiText = ollamaData?.response || "";
+
+    if (!aiText) {
+      return res.status(502).json({
+        success: false,
+        message: "AI service returned an empty response",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: aiText,
+    });
+  } catch (error) {
+    console.error("❌ Guest AI chat error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "AI service unavailable. Please try again later.",
+    });
+  }
+});
+
 // 404 handler for API routes (must be after all other routes)
 app.use((req, res, next) => {
   if (req.path.startsWith("/api/")) {
