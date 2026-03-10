@@ -270,7 +270,7 @@ Answer based only on the system information above.`;
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "dcarrascosa/medgemma-1.5-4b-it:Q4_K_M",
+        model: "llama3.2:3b",
         prompt: systemPrompt,
         stream: false,
         options: {
