@@ -241,7 +241,8 @@ User question: ${message}
 
 Answer based only on the system information above.`;
 
-    const ollamaResponse = await fetch("http://localhost:11434/api/generate", {
+    const ollamaBaseUrl = (process.env.OLLAMA_BASE_URL || "http://localhost:11434").replace(/\/$/, "");
+    const ollamaResponse = await fetch(`${ollamaBaseUrl}/api/generate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
