@@ -20,6 +20,7 @@ const {
   PrescriptionItem,
   DispenseRecord,
   MedicalReport,
+  Notification,
   sequelize,
 } = require("../models");
 const { parsePagination } = require("../utils/crudControllerFactory");
@@ -71,6 +72,39 @@ const bookAppointment = async (req, res) => {
       bill_amount: billAmountNumber,
       hospital_id: hid ?? null,
     });
+
+    // Create a notification for the assigned doctor (mapped via Staff.user_id)
+    try {
+      const doctorStaff = await Staff.findByPk(doctor_id, {
+        attributes: ["user_id"],
+      });
+      const doctorUserId = doctorStaff?.user_id;
+      if (doctorUserId) {
+        const notif = await Notification.create({
+          user_id: doctorUserId,
+          message: `You have been assigned a new appointment on ${new Date(appointment_date).toLocaleString()}`,
+          type: "appointment_assigned",
+          is_read: false,
+        });
+
+        const io = req.app?.get("io");
+        if (io) {
+          io.to(`user:${doctorUserId}`).emit("notification_new", {
+            id: notif.id,
+            user_id: notif.user_id,
+            message: notif.message,
+            type: notif.type,
+            is_read: notif.is_read,
+            createdAt: notif.createdAt,
+            appointmentId: appt.id,
+          });
+        }
+      }
+    } catch (e) {
+      // Non-fatal: log and continue
+      // eslint-disable-next-line no-console
+      console.error("Failed to create/emit doctor notification for appointment:", e.message);
+    }
 
     // Walk-in + pending: auto-create unpaid billing record (appointment-linked bill)
     if (appt.is_walk_in && appt.status === "pending") {

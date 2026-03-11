@@ -29,6 +29,11 @@ function attachChatSocket(io) {
   });
 
   io.on("connection", (socket) => {
+    // Join a per-user room so we can push notifications/chat to a specific userId
+    if (socket.userId) {
+      socket.join(`user:${socket.userId}`);
+    }
+
     socket.emit("connected", { userId: socket.userId });
 
     socket.on("join_room", async (roomId, cb) => {
