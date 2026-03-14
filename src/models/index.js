@@ -81,6 +81,9 @@ const ChatRoom = require("./chatRoom")(sequelize);
 const ChatParticipant = require("./chatParticipant")(sequelize);
 const ChatMessage = require("./chatMessage")(sequelize);
 const SupportTicket = require("./supportTicket")(sequelize);
+const DrugCategory = require("./drugCategory")(sequelize);
+const Drug = require("./drug")(sequelize);
+const DrugFormulation = require("./drugFormulation")(sequelize);
 
 const models = {
   Role,
@@ -145,6 +148,9 @@ const models = {
   ChatParticipant,
   ChatMessage,
   SupportTicket,
+  DrugCategory,
+  Drug,
+  DrugFormulation,
 };
 
 // Initialize models in correct order (parent tables first)
@@ -232,6 +238,11 @@ const initializeModels = async () => {
     await ChatParticipant.sync({ force: false, alter: false });
     await ChatMessage.sync({ force: false, alter: false });
     await SupportTicket.sync({ force: false, alter: false });
+
+    // Drug categories & drugs (reference / essential medicines list)
+    await DrugCategory.sync({ force: false, alter: false });
+    await Drug.sync({ force: false, alter: false });
+    await DrugFormulation.sync({ force: false, alter: false });
 
     console.log("✅ All models synced successfully");
   } catch (error) {
@@ -855,6 +866,19 @@ const setupAssociations = () => {
     SupportTicket.belongsTo(User, { foreignKey: "assigned_to", as: "assignedToUser" });
     ChatRoom.hasOne(SupportTicket, { foreignKey: "chat_room_id", as: "supportTicket" });
     SupportTicket.belongsTo(ChatRoom, { foreignKey: "chat_room_id", as: "chatRoom" });
+
+    // Drug categories & drugs
+    DrugCategory.hasMany(DrugCategory, { foreignKey: "parent_id", as: "subcategories" });
+    DrugCategory.belongsTo(DrugCategory, { foreignKey: "parent_id", as: "parent" });
+    DrugCategory.hasMany(Drug, { foreignKey: "drug_category_id", as: "drugs" });
+    Drug.belongsTo(DrugCategory, { foreignKey: "drug_category_id", as: "drugCategory" });
+    Drug.hasMany(DrugFormulation, { foreignKey: "drug_id", as: "drugFormulations", onDelete: "CASCADE" });
+    DrugFormulation.belongsTo(Drug, { foreignKey: "drug_id", as: "drug" });
+
+    Medication.belongsTo(Drug, { foreignKey: "drug_id", as: "catalogueDrug" });
+    Drug.hasMany(Medication, { foreignKey: "drug_id", as: "medications" });
+    Medication.belongsTo(DrugFormulation, { foreignKey: "drug_formulation_id", as: "catalogueFormulation" });
+    DrugFormulation.hasMany(Medication, { foreignKey: "drug_formulation_id", as: "medications" });
 
     console.log("✅ All associations set up successfully");
   } catch (error) {

@@ -1,4 +1,4 @@
-const { Medication, InventoryItem, Hospital } = require("../models");
+const { Medication, InventoryItem, Hospital, Drug, DrugFormulation } = require("../models");
 const { createCrudController } = require("../utils/crudControllerFactory");
 const { getHospitalId } = require("../utils/hospitalScope");
 
@@ -7,6 +7,18 @@ const medicationInclude = [
     model: InventoryItem,
     as: "inventoryItem",
     attributes: ["id", "name", "quantity_available", "quantity_in_pharmacy", "unit"],
+  },
+  {
+    model: Drug,
+    as: "catalogueDrug",
+    required: false,
+    attributes: ["id", "name", "drug_category_id"],
+  },
+  {
+    model: DrugFormulation,
+    as: "catalogueFormulation",
+    required: false,
+    attributes: ["id", "dose_form", "strength_size", "drug_id"],
   },
 ];
 

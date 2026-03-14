@@ -305,7 +305,7 @@ async function getPeers(req, res) {
 
     const users = await User.findAll({
       where: { hospital_id: hospitalId, status: "active", id: { [Op.ne]: req.userId } },
-      attributes: ["id", "full_name", "email"],
+      attributes: ["id", "full_name", "email", "profile_image_path"],
       include: [{ model: Staff, as: "staff", required: false, attributes: ["staff_type", "department_id"] }],
     });
 

@@ -36,6 +36,9 @@ const labResultRoutes = require("./routes/labResultRoutes");
 const medicationRoutes = require("./routes/medicationRoutes");
 const prescriptionRoutes = require("./routes/prescriptionRoutes");
 const dispenseRoutes = require("./routes/dispenseRoutes");
+const drugCategoryRoutes = require("./routes/drugCategoryRoutes");
+const drugRoutes = require("./routes/drugRoutes");
+const drugFormulationRoutes = require("./routes/drugFormulationRoutes");
 
 const inventoryRoutes = require("./routes/inventoryRoutes");
 const inventoryTransactionRoutes = require("./routes/inventoryTransactionRoutes");
@@ -121,6 +124,9 @@ app.use("/api/lab-results", authenticateUser, labResultRoutes);
 app.use("/api/medications", authenticateUser, medicationRoutes);
 app.use("/api/prescriptions", authenticateUser, prescriptionRoutes);
 app.use("/api/dispense", authenticateUser, dispenseRoutes);
+app.use("/api/drug-categories", authenticateUser, drugCategoryRoutes);
+app.use("/api/drugs", authenticateUser, drugRoutes);
+app.use("/api/drug-formulations", authenticateUser, drugFormulationRoutes);
 
 app.use("/api/inventory", authenticateUser, inventoryRoutes);
 app.use("/api/inventory-transactions", authenticateUser, inventoryTransactionRoutes);

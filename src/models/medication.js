@@ -57,11 +57,31 @@ module.exports = (sequelize) => {
         allowNull: true,
         references: { model: "hospitals", key: "id" },
       },
+      drug_id: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: { model: "drugs", key: "id" },
+        onDelete: "SET NULL",
+        comment: "Optional link to catalogue drug (medicine list). When set, medication is linked to this drug.",
+      },
+      drug_formulation_id: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: { model: "drug_formulations", key: "id" },
+        onDelete: "SET NULL",
+        comment: "Optional link to catalogue formulation (e.g. Tablet 500mg). Can pre-fill dosage form.",
+      },
     },
     {
       tableName: "medications",
       timestamps: true,
-      indexes: [{ fields: ["name"] }, { fields: ["inventory_item_id"] }, { fields: ["hospital_id"] }],
+      indexes: [
+        { fields: ["name"] },
+        { fields: ["inventory_item_id"] },
+        { fields: ["hospital_id"] },
+        { fields: ["drug_id"] },
+        { fields: ["drug_formulation_id"] },
+      ],
     }
   );
 
