@@ -84,6 +84,7 @@ const SupportTicket = require("./supportTicket")(sequelize);
 const DrugCategory = require("./drugCategory")(sequelize);
 const Drug = require("./drug")(sequelize);
 const DrugFormulation = require("./drugFormulation")(sequelize);
+const KenyaLabTest = require("./kenyalabtest")(sequelize);
 
 const models = {
   Role,
@@ -151,6 +152,7 @@ const models = {
   DrugCategory,
   Drug,
   DrugFormulation,
+  KenyaLabTest,
 };
 
 // Initialize models in correct order (parent tables first)
@@ -194,6 +196,7 @@ const initializeModels = async () => {
 
     // 7) LABORATORY MODULE
     await LabTest.sync({ force: false, alter: false });
+    await KenyaLabTest.sync({ force: false, alter: false });
     await LabOrder.sync({ force: false, alter: false });
     await LabOrderItem.sync({ force: false, alter: false });
     await LabResult.sync({ force: false, alter: false });

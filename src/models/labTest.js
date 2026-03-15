@@ -11,16 +11,18 @@ module.exports = (sequelize) => {
       },
       test_name: {
         type: DataTypes.STRING(200),
-        allowNull: false,
+        allowNull: true,
+        comment: "Display name for the test.",
       },
       test_code: {
         type: DataTypes.STRING(100),
-        allowNull: false,
-        unique: true,
+        allowNull: true,
+        comment: "Display name for the test.",
       },
       price: {
         type: DataTypes.DECIMAL(12, 2),
         allowNull: true,
+        comment: "Charges for this test at this hospital.",
       },
       hospital_id: {
         type: DataTypes.UUID,
@@ -31,7 +33,11 @@ module.exports = (sequelize) => {
     {
       tableName: "lab_tests",
       timestamps: true,
-      indexes: [{ unique: true, fields: ["test_code"] }, { fields: ["test_name"] }, { fields: ["hospital_id"] }],
+      indexes: [
+        { unique: true, fields: ["hospital_id", "test_code"], name: "lab_tests_hospital_id_test_code_unique" },
+        { fields: ["test_name"] },
+        { fields: ["hospital_id"] },
+      ],
     }
   );
 

@@ -144,5 +144,5 @@ const createCrudController = ({
   return { create, getAll, getById, update, remove };
 };
 
-module.exports = { createCrudController, parsePagination };
+module.exports = { createCrudController, parsePagination, buildSearchWhere };
 

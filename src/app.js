@@ -30,6 +30,7 @@ const consultationRoutes = require("./routes/consultationRoutes");
 const vitalSignsRoutes = require("./routes/vitalSignsRoutes");
 
 const labTestRoutes = require("./routes/labTestRoutes");
+const kenyalabtestRoutes = require("./routes/kenyalabtestRoutes");
 const labOrderRoutes = require("./routes/labOrderRoutes");
 const labResultRoutes = require("./routes/labResultRoutes");
 
@@ -118,6 +119,7 @@ app.use("/api/consultations", authenticateUser, consultationRoutes);
 app.use("/api/vital-signs", authenticateUser, vitalSignsRoutes);
 
 app.use("/api/lab-tests", authenticateUser, labTestRoutes);
+app.use("/api/kenya-lab-tests", authenticateUser, kenyalabtestRoutes);
 app.use("/api/lab-orders", authenticateUser, labOrderRoutes);
 app.use("/api/lab-results", authenticateUser, labResultRoutes);
 
