@@ -376,6 +376,9 @@ const setupAssociations = () => {
     Hospital.hasMany(Supplier, { foreignKey: "hospital_id", as: "suppliers" });
     Supplier.belongsTo(Hospital, { foreignKey: "hospital_id", as: "hospital" });
 
+    Hospital.hasMany(PurchaseOrder, { foreignKey: "hospital_id", as: "purchaseOrders" });
+    PurchaseOrder.belongsTo(Hospital, { foreignKey: "hospital_id", as: "hospital" });
+
     Hospital.hasMany(Admission, { foreignKey: "hospital_id", as: "admissions" });
     Admission.belongsTo(Hospital, { foreignKey: "hospital_id", as: "hospital" });
 

@@ -15,6 +15,7 @@ const crud = createCrudController({
   name: "PurchaseOrder",
   searchableFields: ["status"],
   include: poInclude,
+  scopeByHospital: true,
 });
 
 const create = async (req, res) => {
@@ -27,6 +28,7 @@ const create = async (req, res) => {
       supplier_id,
       order_date: order_date ? new Date(order_date) : new Date(),
       status: status || "draft",
+      hospital_id: req.user?.hospital_id || null,
     });
     if (Array.isArray(items) && items.length > 0) {
       const rows = items

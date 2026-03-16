@@ -9,11 +9,22 @@ const getAll = async (req, res) => {
     const where = {};
     if (transaction_type && String(transaction_type).trim()) where.transaction_type = String(transaction_type).trim();
     if (inventory_item_id && String(inventory_item_id).trim()) where.inventory_item_id = String(inventory_item_id).trim();
+    const include = [
+      {
+        model: InventoryItem,
+        as: "item",
+        attributes: ["id", "name", "unit", "pack_size", "hospital_id"],
+        ...(req.user?.hospital_id
+          ? { where: { hospital_id: req.user.hospital_id } }
+          : {}),
+      },
+    ];
+
     const { count, rows } = await InventoryTransaction.findAndCountAll({
       where,
       limit,
       offset,
-      include: [{ model: InventoryItem, as: "item", attributes: ["id", "name", "unit", "pack_size"] }],
+      include,
       order: [["transaction_date", "DESC"]],
     });
     return res.status(200).json({

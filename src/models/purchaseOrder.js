@@ -24,11 +24,22 @@ module.exports = (sequelize) => {
         allowNull: false,
         defaultValue: "draft",
       },
+      hospital_id: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: { model: "hospitals", key: "id" },
+        comment: "Owning hospital/clinic for this purchase order",
+      },
     },
     {
       tableName: "purchase_orders",
       timestamps: true,
-      indexes: [{ fields: ["supplier_id"] }, { fields: ["status"] }, { fields: ["order_date"] }],
+      indexes: [
+        { fields: ["supplier_id"] },
+        { fields: ["status"] },
+        { fields: ["order_date"] },
+        { fields: ["hospital_id"] },
+      ],
     }
   );
 
