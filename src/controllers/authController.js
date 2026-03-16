@@ -279,15 +279,16 @@ const login = async (req, res) => {
       }
     }
 
-    if (hospital && !isHospitalSubscriptionActive(hospital)) {
-      const subscriptionStatus = getSubscriptionStatus(hospital);
-      return res.status(403).json({
-        success: false,
-        message: subscriptionStatus.message || "Subscription has expired. Renew to continue using the system.",
-        code: "SUBSCRIPTION_EXPIRED",
-        subscription_status: subscriptionStatus,
-      });
-    }
+    // Pilot: subscription check disabled — re-enable when rolling out
+    // if (hospital && !isHospitalSubscriptionActive(hospital)) {
+    //   const subscriptionStatus = getSubscriptionStatus(hospital);
+    //   return res.status(403).json({
+    //     success: false,
+    //     message: subscriptionStatus.message || "Subscription has expired. Renew to continue using the system.",
+    //     code: "SUBSCRIPTION_EXPIRED",
+    //     subscription_status: subscriptionStatus,
+    //   });
+    // }
 
     await user.update({ last_login: new Date() });
     const token = jwt.sign({ id: user.id, type: "user" }, config.jwtSecret, { expiresIn: "7d" });
@@ -399,15 +400,16 @@ const me = async (req, res) => {
     let menuItems = await getMenuItemsForRole(role?.id, role?.name);
     const hospital = user.hospital || (user.hospital_id ? await Hospital.findByPk(user.hospital_id) : null);
 
-    if (hospital && !isHospitalSubscriptionActive(hospital)) {
-      const subscriptionStatus = getSubscriptionStatus(hospital);
-      return res.status(403).json({
-        success: false,
-        message: subscriptionStatus.message || "Subscription has expired. Renew to continue using the system.",
-        code: "SUBSCRIPTION_EXPIRED",
-        subscription_status: subscriptionStatus,
-      });
-    }
+    // Pilot: subscription check disabled — re-enable when rolling out
+    // if (hospital && !isHospitalSubscriptionActive(hospital)) {
+    //   const subscriptionStatus = getSubscriptionStatus(hospital);
+    //   return res.status(403).json({
+    //     success: false,
+    //     message: subscriptionStatus.message || "Subscription has expired. Renew to continue using the system.",
+    //     code: "SUBSCRIPTION_EXPIRED",
+    //     subscription_status: subscriptionStatus,
+    //   });
+    // }
 
     if (hospital && hospital.subscription_package) {
       menuItems = filterMenuItemsByPackage(menuItems, hospital.subscription_package);
