@@ -5,5 +5,6 @@ module.exports = createCrudController({
   Model: Supplier,
   name: "Supplier",
   searchableFields: ["name", "email", "phone"],
+  scopeByHospital: true,
 });
 

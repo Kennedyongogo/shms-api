@@ -205,7 +205,12 @@ const initializeModels = async () => {
     await Medication.sync({ force: false, alter: false });
     await Prescription.sync({ force: false, alter: false });
     await PrescriptionItem.sync({ force: false, alter: false });
-    await DispenseRecord.sync({ force: false, alter: false }); 
+    await DispenseRecord.sync({ force: false, alter: false });
+    await Supplier.sync({ force: false, alter: false });
+    await PurchaseOrder.sync({ force: false, alter: false });
+    await PurchaseOrderItem.sync({ force: false, alter: false });
+    await InventoryItem.sync({ force: false, alter: false });
+    await InventoryTransaction.sync({ force: false, alter: false });
 
     // 11) INPATIENT MODULE
     await Admission.sync({ force: false, alter: false });
@@ -367,6 +372,9 @@ const setupAssociations = () => {
 
     Hospital.hasMany(InventoryItem, { foreignKey: "hospital_id", as: "inventoryItems" });
     InventoryItem.belongsTo(Hospital, { foreignKey: "hospital_id", as: "hospital" });
+
+    Hospital.hasMany(Supplier, { foreignKey: "hospital_id", as: "suppliers" });
+    Supplier.belongsTo(Hospital, { foreignKey: "hospital_id", as: "hospital" });
 
     Hospital.hasMany(Admission, { foreignKey: "hospital_id", as: "admissions" });
     Admission.belongsTo(Hospital, { foreignKey: "hospital_id", as: "hospital" });
