@@ -292,4 +292,100 @@ const getBillById = async (req, res) => {
   }
 };
 
-module.exports = { generateBill, addBillItems, getByReference, setBillStatus, listBills, getBillById };
+const updateBillItem = async (req, res) => {
+  try {
+    const { item_id } = req.params;
+    const { amount, reference_id } = req.body;
+    const item = await BillItem.findByPk(item_id);
+    if (!item) {
+      return res.status(404).json({ success: false, message: "Bill item not found" });
+    }
+
+    const bill = await Bill.findByPk(item.bill_id, {
+      include: [{ model: Patient, as: "patient", attributes: ["hospital_id"] }],
+    });
+    if (!bill) {
+      return res.status(404).json({ success: false, message: "Bill not found" });
+    }
+
+    const hid = getHospitalId(req);
+    if (hid != null) {
+      const billHid = bill.hospital_id ?? bill.patient?.hospital_id;
+      if (billHid != null && billHid !== hid) {
+        return res.status(403).json({ success: false, message: "Bill does not belong to your hospital." });
+      }
+    }
+
+    const updates = {};
+    if (amount != null) updates.amount = amount;
+    if (reference_id !== undefined) updates.reference_id = reference_id;
+
+    await item.update(updates);
+
+    const allItems = await BillItem.findAll({ where: { bill_id: bill.id } });
+    const total = allItems.reduce((sum, i) => sum + Number(i.amount || 0), 0);
+    await bill.update({ total_amount: total });
+
+    await auditLog(req, { action: "UPDATE_BILL_ITEM", table_name: "BillItem", record_id: item_id });
+
+    return res.status(200).json({ success: true, data: { bill, items: allItems } });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Error updating bill item",
+      error: error.message,
+    });
+  }
+};
+
+const deleteBillItem = async (req, res) => {
+  try {
+    const { item_id } = req.params;
+    const item = await BillItem.findByPk(item_id);
+    if (!item) {
+      return res.status(404).json({ success: false, message: "Bill item not found" });
+    }
+
+    const bill = await Bill.findByPk(item.bill_id, {
+      include: [{ model: Patient, as: "patient", attributes: ["hospital_id"] }],
+    });
+    if (!bill) {
+      return res.status(404).json({ success: false, message: "Bill not found" });
+    }
+
+    const hid = getHospitalId(req);
+    if (hid != null) {
+      const billHid = bill.hospital_id ?? bill.patient?.hospital_id;
+      if (billHid != null && billHid !== hid) {
+        return res.status(403).json({ success: false, message: "Bill does not belong to your hospital." });
+      }
+    }
+
+    await item.destroy();
+
+    const allItems = await BillItem.findAll({ where: { bill_id: bill.id } });
+    const total = allItems.reduce((sum, i) => sum + Number(i.amount || 0), 0);
+    await bill.update({ total_amount: total });
+
+    await auditLog(req, { action: "DELETE_BILL_ITEM", table_name: "BillItem", record_id: item_id });
+
+    return res.status(200).json({ success: true, data: { bill, items: allItems } });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Error deleting bill item",
+      error: error.message,
+    });
+  }
+};
+
+module.exports = {
+  generateBill,
+  addBillItems,
+  getByReference,
+  setBillStatus,
+  listBills,
+  getBillById,
+  updateBillItem,
+  deleteBillItem,
+};

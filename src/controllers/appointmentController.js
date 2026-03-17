@@ -552,6 +552,93 @@ const getById = async (req, res) => {
   }
 };
 
+const getBySlug = async (req, res) => {
+  try {
+    const { slug } = req.params;
+    if (!slug || typeof slug !== "string") {
+      return res.status(400).json({ success: false, message: "slug is required" });
+    }
+
+    const hospitalId = getHospitalId(req);
+
+    const where = {};
+    if (hospitalId != null) {
+      where.hospital_id = hospitalId;
+    }
+
+    const appointments = await Appointment.findAll({
+      where,
+      include: [
+        {
+          model: Patient,
+          as: "patient",
+          attributes: { exclude: ["password"] },
+          include: [
+            {
+              model: User,
+              as: "user",
+              attributes: ["id", "full_name", "email", "phone"],
+            },
+          ],
+        },
+        {
+          model: Service,
+          as: "service",
+          attributes: ["id", "name", "price", "status"],
+          required: false,
+        },
+        {
+          model: Staff,
+          as: "doctor",
+          include: [
+            {
+              model: User,
+              as: "user",
+              attributes: ["id", "full_name", "email", "phone"],
+              required: false,
+            },
+          ],
+        },
+      ],
+      order: [["appointment_date", "DESC"]],
+      limit: 100,
+    });
+
+    const normalizeSlug = (name) =>
+      String(name || "")
+        .toLowerCase()
+        .trim()
+        .replace(/\s+/g, "-")
+        .replace(/[^a-z0-9\-]/g, "");
+
+    const target = slug.toLowerCase();
+
+    const match = appointments.find((appt) => {
+      const patientName =
+        appt?.patient?.full_name ||
+        appt?.patient?.user?.full_name ||
+        "";
+      return normalizeSlug(patientName) === target;
+    });
+
+    if (!match) {
+      return res.status(404).json({ success: false, message: "Appointment not found" });
+    }
+
+    if (!ensureAppointmentBelongsToHospital(match, req)) {
+      return res.status(404).json({ success: false, message: "Appointment not found" });
+    }
+
+    return res.status(200).json({ success: true, data: match });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching appointment by slug",
+      error: error.message,
+    });
+  }
+};
+
 const remove = async (req, res) => {
   try {
     const { id } = req.params;
@@ -717,5 +804,6 @@ module.exports = {
   listByPatient,
   listAll,
   getById,
+  getBySlug,
   remove,
 };

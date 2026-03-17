@@ -12,6 +12,7 @@ router.patch("/:id/status", requireAppointmentDoctorOrAdmin, appointmentControll
 router.get("/", appointmentController.listAll);
 router.get("/doctor/:doctor_id", appointmentController.listByDoctor);
 router.get("/patient/:patient_id", appointmentController.listByPatient);
+router.get("/by-slug/:slug", appointmentController.getBySlug);
 router.get("/:id", appointmentController.getById);
 router.delete("/:id", requireRoles(["Super Admin"]), appointmentController.remove);
 
