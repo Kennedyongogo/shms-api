@@ -13,15 +13,19 @@ async function getCurrentStaff(req) {
 
 const createPrescription = async (req, res) => {
   try {
-    const { patient_id, doctor_id, consultation_id, prescription_date, items } = req.body;
-    if (!patient_id) {
-      return res.status(400).json({ success: false, message: "patient_id is required" });
+    const { patient_id, doctor_id, consultation_id, prescription_date, items, source } = req.body;
+    const origin = (source || "clinic").toString().toLowerCase().trim();
+    const isPos = origin === "pos";
+    const isExternal = origin === "external";
+
+    if (!patient_id && !isPos && !isExternal) {
+      return res.status(400).json({ success: false, message: "patient_id is required unless source is 'pos' or 'external'" });
     }
 
     let finalDoctorId = doctor_id ?? null;
     let appointmentIdForBill = null;
 
-    if (!isSuperAdmin(req)) {
+    if (!isSuperAdmin(req) && !isPos) {
       const staff = await getCurrentStaff(req);
       if (!staff) return res.status(403).json({ success: false, message: "Access denied: staff account required" });
 
@@ -63,6 +67,7 @@ const createPrescription = async (req, res) => {
           consultation_id: consultation_id ?? null,
           prescription_date: prescription_date ?? new Date(),
           hospital_id: hospitalId ?? null,
+          source: origin || "clinic",
         },
         { transaction: t }
       );
