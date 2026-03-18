@@ -4,10 +4,10 @@ const { requireRoles } = require("../middleware/auth");
 
 const router = express.Router();
 
-router.post("/", requireRoles(["Super Admin"]), patientController.create);
+router.post("/", patientController.create);
 router.get("/", patientController.getAll);
 router.get("/:id", patientController.getById);
-router.put("/:id", requireRoles(["Super Admin"]), patientController.update);
+router.put("/:id", patientController.update);
 router.delete("/:id", requireRoles(["Super Admin"]), patientController.remove);
 
 module.exports = router;

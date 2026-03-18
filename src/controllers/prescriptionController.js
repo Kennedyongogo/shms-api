@@ -22,6 +22,33 @@ const createPrescription = async (req, res) => {
       return res.status(400).json({ success: false, message: "patient_id is required unless source is 'pos' or 'external'" });
     }
 
+    const hospitalId = getHospitalId(req);
+    // POS can be anonymous, but billing requires a patient_id (Bill.patient_id is NOT NULL).
+    // For POS with no patient, use a per-hospital placeholder patient so billing/dispensing can proceed.
+    let effectivePatientId = patient_id ?? null;
+    if (isPos && !effectivePatientId) {
+      if (!hospitalId) {
+        return res.status(400).json({ success: false, message: "POS prescription requires hospital context" });
+      }
+      const placeholderWhere = {
+        hospital_id: hospitalId,
+        user_id: null,
+        full_name: "POS Customer",
+        phone: null,
+        email: null,
+        patient_source: "walk_in",
+      };
+      let placeholder = await Patient.findOne({ where: placeholderWhere });
+      if (!placeholder) {
+        placeholder = await Patient.create({
+          ...placeholderWhere,
+          status: "active",
+          password: null,
+        });
+      }
+      effectivePatientId = placeholder.id;
+    }
+
     let finalDoctorId = doctor_id ?? null;
     let appointmentIdForBill = null;
 
@@ -41,7 +68,7 @@ const createPrescription = async (req, res) => {
       if (String(appt.doctor_id) !== String(staff.id)) {
         return res.status(403).json({ success: false, message: "Access denied: only assigned doctor can prescribe for this consultation" });
       }
-      if (String(appt.patient_id) !== String(patient_id)) {
+      if (String(appt.patient_id) !== String(effectivePatientId)) {
         return res.status(400).json({ success: false, message: "patient_id does not match consultation appointment patient" });
       }
 
@@ -58,11 +85,10 @@ const createPrescription = async (req, res) => {
       if (!finalDoctorId && c?.appointment?.doctor_id) finalDoctorId = c.appointment.doctor_id;
     }
 
-    const hospitalId = getHospitalId(req);
     const prescription = await sequelize.transaction(async (t) => {
       const created = await Prescription.create(
         {
-          patient_id,
+          patient_id: effectivePatientId,
           doctor_id: finalDoctorId,
           consultation_id: consultation_id ?? null,
           prescription_date: prescription_date ?? new Date(),
@@ -105,7 +131,7 @@ const createPrescription = async (req, res) => {
       if (rows.length) {
         const bill = await Bill.create(
           {
-            patient_id,
+            patient_id: effectivePatientId,
             consultation_id: consultation_id ?? null,
             appointment_id: appointmentIdForBill ?? null,
             total_amount: total,

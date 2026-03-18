@@ -12,7 +12,7 @@ const {
   Consultation,
   LabOrder,
   LabOrderItem,
-  LabResult,
+  LabResultData,
   LabTest,
   Medication,
   Prescription,
@@ -153,10 +153,10 @@ const getAll = async (req, res) => {
         return byStatus;
       }),
       hid != null
-        ? LabResult.count({
+        ? LabResultData.count({
             include: [{ model: LabOrderItem, as: "labOrderItem", required: true, include: [{ model: LabOrder, as: "labOrder", where: { hospital_id: hid }, required: true }] }],
           })
-        : LabResult.count(),
+        : LabResultData.count(),
       LabTest.count({ where: hospWhere }),
       Medication.count({ where: hospWhere }),
       Prescription.count({ where: hospWhere }),

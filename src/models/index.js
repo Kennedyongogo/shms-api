@@ -29,7 +29,8 @@ const VitalSigns = require("./vitalSigns")(sequelize);
 const LabTest = require("./labTest")(sequelize);
 const LabOrder = require("./labOrder")(sequelize);
 const LabOrderItem = require("./labOrderItem")(sequelize);
-const LabResult = require("./labResult")(sequelize);
+const LabTestTemplate = require("./labTestTemplate")(sequelize);
+const LabResultData = require("./labResultData")(sequelize);
 
 const Medication = require("./medication")(sequelize);
 const Prescription = require("./prescription")(sequelize);
@@ -109,7 +110,8 @@ const models = {
   LabTest,
   LabOrder,
   LabOrderItem,
-  LabResult,
+  LabTestTemplate,
+  LabResultData,
   Medication,
   Prescription,
   PrescriptionItem,
@@ -199,7 +201,8 @@ const initializeModels = async () => {
     await KenyaLabTest.sync({ force: false, alter: false });
     await LabOrder.sync({ force: false, alter: false });
     await LabOrderItem.sync({ force: false, alter: false });
-    await LabResult.sync({ force: false, alter: false });
+    await LabTestTemplate.sync({ force: false, alter: false });
+    await LabResultData.sync({ force: false, alter: false });
 
     // 8) PHARMACY MODULE
     await Medication.sync({ force: false, alter: false });
@@ -449,14 +452,8 @@ const setupAssociations = () => {
     Staff.hasMany(NursingNote, { foreignKey: "nurse_id", as: "nursingNotes" });
     NursingNote.belongsTo(Staff, { foreignKey: "nurse_id", as: "nurse" });
 
-    Staff.hasMany(LabResult, {
-      foreignKey: "lab_technician_id",
-      as: "labResults",
-    });
-    LabResult.belongsTo(Staff, {
-      foreignKey: "lab_technician_id",
-      as: "labTechnician",
-    });
+    Staff.hasMany(LabResultData, { foreignKey: "lab_technician_id", as: "labResults" });
+    LabResultData.belongsTo(Staff, { foreignKey: "lab_technician_id", as: "labTechnician" });
 
     Staff.hasMany(Event, { foreignKey: "created_by", as: "createdEvents" });
     Event.belongsTo(Staff, { foreignKey: "created_by", as: "creator" });
@@ -668,14 +665,14 @@ const setupAssociations = () => {
       as: "labTest",
     });
 
-    LabOrderItem.hasOne(LabResult, {
-      foreignKey: "lab_order_item_id",
-      as: "result",
-    });
-    LabResult.belongsTo(LabOrderItem, {
-      foreignKey: "lab_order_item_id",
-      as: "labOrderItem",
-    });
+    LabOrderItem.hasOne(LabResultData, { foreignKey: "lab_order_item_id", as: "result" });
+    LabResultData.belongsTo(LabOrderItem, { foreignKey: "lab_order_item_id", as: "labOrderItem" });
+
+    // Lab test templates (dynamic result schemas)
+    LabTest.hasOne(LabTestTemplate, { foreignKey: "lab_test_id", as: "template" });
+    LabTestTemplate.belongsTo(LabTest, { foreignKey: "lab_test_id", as: "labTest" });
+
+    // (LabResult removed) Result payload is stored directly in LabResultData
 
     // Pharmacy
     Prescription.hasMany(PrescriptionItem, {

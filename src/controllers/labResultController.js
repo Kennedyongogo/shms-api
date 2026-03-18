@@ -1,5 +1,5 @@
 const { Op } = require("sequelize");
-const { LabResult, LabOrderItem, LabTest, LabOrder, Patient, User, Staff, Consultation, Appointment } = require("../models");
+const { LabOrderItem, LabTest, LabOrder, Patient, User, Staff, Consultation, Appointment, LabTestTemplate, LabResultData } = require("../models");
 const { parsePagination } = require("../utils/crudControllerFactory");
 const { requirePaidByReferenceOrRespond } = require("../utils/paymentGate");
 const { auditLog } = require("../utils/auditLog");
@@ -68,12 +68,11 @@ const list = async (req, res) => {
     const where = {};
     if (search) {
       where[Op.or] = [
-        { result_value: { [Op.iLike]: `%${search}%` } },
-        { reference_range: { [Op.iLike]: `%${search}%` } },
+        { interpretation: { [Op.iLike]: `%${search}%` } },
       ];
     }
 
-    const { count, rows } = await LabResult.findAndCountAll({
+    const { count, rows } = await LabResultData.findAndCountAll({
       where,
       limit,
       offset,
@@ -93,12 +92,12 @@ const list = async (req, res) => {
 
 const enterResults = async (req, res) => {
   try {
-    const { lab_order_item_id, result_value, reference_range, interpretation, lab_technician_id, result_date } = req.body;
+    const { lab_order_item_id, lab_technician_id, result_date, results, interpretation } = req.body;
     if (!lab_order_item_id) {
       return res.status(400).json({ success: false, message: "lab_order_item_id is required" });
     }
 
-    const item = await LabOrderItem.findByPk(lab_order_item_id);
+    const item = await LabOrderItem.findByPk(lab_order_item_id, { include: [{ model: LabTest, as: "labTest", required: false, include: [{ model: LabTestTemplate, as: "template", required: false }] }] });
     if (!item) return res.status(404).json({ success: false, message: "Lab order item not found" });
 
     // Only Super Admin, lab technician, or doctor assigned to the appointment can enter/update results (like consultation).
@@ -119,13 +118,8 @@ const enterResults = async (req, res) => {
       }
     }
 
-    // Enforce payment before results can be entered/updated.
-    const ok = await requirePaidByReferenceOrRespond(res, {
-      item_type: "lab_order",
-      reference_id: item.lab_order_id,
-      actionLabel: "entering lab results",
-    });
-    if (!ok) return;
+    // Option A policy: allow saving results before payment.
+    // Payment is still enforced when marking the lab order as "completed" (see labOrderController.updateStatus).
 
     let techId = lab_technician_id ?? null;
     if (!techId && req.userId) {
@@ -133,28 +127,100 @@ const enterResults = async (req, res) => {
       if (staff) techId = staff.id;
     }
 
-    const existing = await LabResult.findOne({ where: { lab_order_item_id } });
+    // Template-aware result entry:
+    // If a template exists for this test, expect `results` (object) and store it in LabResultData.
+    // Supports checkbox (boolean), text (string), multi_text (array of strings), number, select, multi_select.
+    const templateRow = item.labTest?.template || (item.lab_test_id ? await LabTestTemplate.findOne({ where: { lab_test_id: item.lab_test_id } }) : null);
+    const template = templateRow?.template || null;
+    const templateVersion = templateRow?.version || 1;
+
+    const validateByTemplate = (tpl, vals) => {
+      if (!tpl || typeof tpl !== "object") return { ok: true, errors: [] };
+      const fields = Array.isArray(tpl.fields) ? tpl.fields : [];
+      if (!fields.length) return { ok: true, errors: [] };
+      if (vals == null || typeof vals !== "object" || Array.isArray(vals)) {
+        return { ok: false, errors: ["results must be an object keyed by field key"] };
+      }
+      const errors = [];
+      for (const f of fields) {
+        const key = String(f.key || f.name || "").trim();
+        if (!key) continue;
+        const required = !!f.required;
+        const type = String(f.type || "text").toLowerCase();
+        const v = vals[key];
+
+        const isEmpty =
+          v === undefined ||
+          v === null ||
+          (typeof v === "string" && v.trim() === "") ||
+          (Array.isArray(v) && v.length === 0);
+
+        if (required && isEmpty) {
+          errors.push(`${key} is required`);
+          continue;
+        }
+        if (isEmpty) continue;
+
+        if (type === "checkbox" || type === "boolean") {
+          if (typeof v !== "boolean") errors.push(`${key} must be boolean`);
+        } else if (type === "number") {
+          const n = typeof v === "number" ? v : Number(v);
+          if (!Number.isFinite(n)) errors.push(`${key} must be a number`);
+        } else if (type === "select") {
+          if (typeof v !== "string") errors.push(`${key} must be a string`);
+          const options = Array.isArray(f.options) ? f.options.map(String) : null;
+          if (options && !options.includes(String(v))) errors.push(`${key} must be one of: ${options.join(", ")}`);
+        } else if (type === "multi_select") {
+          if (!Array.isArray(v)) errors.push(`${key} must be an array`);
+          const options = Array.isArray(f.options) ? f.options.map(String) : null;
+          if (Array.isArray(v) && options) {
+            for (const choice of v) {
+              if (!options.includes(String(choice))) errors.push(`${key} has invalid option: ${choice}`);
+            }
+          }
+        } else if (type === "multi_text") {
+          if (!Array.isArray(v)) errors.push(`${key} must be an array of strings`);
+          if (Array.isArray(v) && v.some((x) => typeof x !== "string")) errors.push(`${key} must be an array of strings`);
+        } else {
+          // text / textarea / default
+          if (typeof v !== "string") errors.push(`${key} must be a string`);
+        }
+      }
+      return { ok: errors.length === 0, errors };
+    };
+
+    const hasTemplate = template && typeof template === "object" && Array.isArray(template.fields) && template.fields.length > 0;
+    if (hasTemplate) {
+      const validated = validateByTemplate(template, results);
+      if (!validated.ok) {
+        return res.status(400).json({ success: false, message: "Invalid results for template", errors: validated.errors });
+      }
+    }
+
+    const existing = await LabResultData.findOne({ where: { lab_order_item_id } });
     if (existing) {
       const updated = await existing.update({
-        result_value: result_value ?? existing.result_value,
-        reference_range: reference_range ?? existing.reference_range,
-        interpretation: interpretation ?? existing.interpretation,
         lab_technician_id: techId ?? existing.lab_technician_id,
         result_date: result_date ?? existing.result_date,
+        template_version: templateVersion,
+        template_snapshot: template,
+        results: results || existing.results,
+        interpretation: interpretation ?? existing.interpretation,
       });
-      await auditLog(req, { action: "UPDATE_LABRESULT", table_name: "LabResult", record_id: existing?.id });
+      await auditLog(req, { action: "UPDATE_LABRESULT", table_name: "LabResultData", record_id: existing?.id });
       return res.status(200).json({ success: true, data: updated });
     }
 
-    const created = await LabResult.create({
+    const created = await LabResultData.create({
       lab_order_item_id,
-      result_value: result_value ?? null,
-      reference_range: reference_range ?? null,
-      interpretation: interpretation ?? null,
       lab_technician_id: techId ?? null,
       result_date: result_date ?? new Date(),
+      template_version: templateVersion,
+      template_snapshot: template,
+      results: results || {},
+      interpretation: interpretation ?? null,
     });
-    await auditLog(req, { action: "CREATE_LABRESULT", table_name: "LabResult", record_id: created?.id });
+    await auditLog(req, { action: "CREATE_LABRESULT", table_name: "LabResultData", record_id: created?.id });
     return res.status(201).json({ success: true, data: created });
   } catch (error) {
     return res.status(500).json({ success: false, message: "Error entering lab results", error: error.message });

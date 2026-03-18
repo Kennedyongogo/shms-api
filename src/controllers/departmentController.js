@@ -1,5 +1,5 @@
 const { Op } = require("sequelize");
-const { Department, Hospital } = require("../models");
+const { Department, Hospital, Staff, Ward, Service, sequelize } = require("../models");
 const { createCrudController, parsePagination } = require("../utils/crudControllerFactory");
 const { scopeByHospital, belongsToUserHospital, withHospitalId } = require("../utils/hospitalScope");
 
@@ -79,8 +79,57 @@ const remove = async (req, res) => {
     const record = await Department.findByPk(id);
     if (!record) return res.status(404).json({ success: false, message: "Department not found" });
     if (!belongsToUserHospital(record, req)) return res.status(403).json({ success: false, message: "Access denied" });
-    return crud.remove(req, res);
+
+    await sequelize.transaction(async (t) => {
+      // Keep child records by moving them to another department in same hospital.
+      // If none exists, create a fallback so delete can proceed.
+      let fallback = await Department.findOne({
+        where: {
+          hospital_id: record.hospital_id,
+          id: { [Op.ne]: id },
+        },
+        order: [["createdAt", "ASC"]],
+        transaction: t,
+      });
+
+      if (!fallback) {
+        fallback = await Department.create(
+          {
+            hospital_id: record.hospital_id,
+            name: "General Department",
+            description: "Auto-created fallback department",
+          },
+          { transaction: t },
+        );
+      }
+
+      await Promise.all([
+        Ward.update(
+          { department_id: fallback.id },
+          { where: { department_id: id }, transaction: t },
+        ),
+        Service.update(
+          { department_id: fallback.id },
+          { where: { department_id: id }, transaction: t },
+        ),
+        Staff.update(
+          { department_id: fallback.id },
+          { where: { department_id: id, hospital_id: record.hospital_id }, transaction: t },
+        ),
+      ]);
+
+      await record.destroy({ transaction: t });
+    });
+
+    return res.status(200).json({ success: true, message: "Department deleted" });
   } catch (e) {
+    if (e.name === "SequelizeForeignKeyConstraintError") {
+      return res.status(409).json({
+        success: false,
+        message: "Cannot delete department because it is still referenced by other records",
+        error: e.message,
+      });
+    }
     return res.status(500).json({ success: false, message: e.message });
   }
 };

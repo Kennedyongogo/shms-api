@@ -53,6 +53,7 @@ async function getReceiptData(paymentId) {
 
     const items = bill.items || [];
     const lineItems = [];
+  let headerDoctorName = null;
 
     for (const item of items) {
       const amount = Number(item.amount || 0);
@@ -83,10 +84,21 @@ async function getReceiptData(paymentId) {
           ],
         });
         if (prescription) {
-          const docName = prescription.doctor?.user?.full_name || "Doctor";
-          const meds = (prescription.items || []).map((pi) => pi.medication?.name || "Medication").filter(Boolean);
-          description = "Prescription";
-          details = { type: "prescription", prescriptionDate: prescription.prescription_date ? new Date(prescription.prescription_date).toLocaleDateString() : "", doctor: docName, medications: meds };
+          const docName = prescription.doctor?.user?.full_name || null;
+          const meds = (prescription.items || [])
+            .map((pi) => pi.medication?.name || null)
+            .filter(Boolean);
+
+          // For receipts, show medication names as the line item description.
+          // Doctor (if present) is shown once in the header.
+          description = meds.length ? meds.join(", ") : "Prescription";
+          details = {
+            type: "prescription",
+            prescriptionDate: prescription.prescription_date ? new Date(prescription.prescription_date).toLocaleDateString() : "",
+            doctor: docName,
+            medications: meds,
+          };
+          if (!headerDoctorName && docName) headerDoctorName = docName;
         }
       } else if (type === "admission" && refId) {
         const admission = await Admission.findByPk(refId, {
@@ -137,6 +149,7 @@ async function getReceiptData(paymentId) {
     amount_paid: Number(payment.amount_paid || 0),
     payment_method: payment.payment_method,
     facility,
+    doctor: headerDoctorName,
     patient: {
       id: patient.id,
       full_name: patient.full_name,
@@ -233,6 +246,7 @@ async function getReceiptPdf(req, res) {
     doc.text(`Payment Method: ${receipt.payment_method || ""}`, { continued: false });
     doc.moveDown(0.5);
     doc.text(`Patient: ${receipt.patient?.full_name || ""}`, { continued: false });
+    if (receipt.doctor) doc.text(`Doctor: ${receipt.doctor}`, { continued: false });
     if (receipt.patient?.phone) doc.text(`Phone: ${receipt.patient.phone}`, { continued: false });
     doc.moveDown(1);
 
@@ -248,8 +262,13 @@ async function getReceiptPdf(req, res) {
     doc.moveTo(50, lineBelowY).lineTo(pageWidth - 50, lineBelowY).stroke();
     let rowY = lineBelowY + 8;
     for (const item of receipt.items || []) {
-      // Lab order description already includes test names; others use (doctor|ward|date) suffix
-      const extra = item.details?.tests?.length ? "" : (item.details?.doctor || item.details?.ward || item.details?.prescriptionDate || "");
+      // Lab order description already includes test names; others use (ward|date) suffix.
+      // For prescriptions, we show medication names directly and doctor is in header.
+      const isPrescription = item.details?.type === "prescription";
+      const extra =
+        item.details?.tests?.length || isPrescription
+          ? ""
+          : (item.details?.ward || item.details?.prescriptionDate || "");
       const desc = item.details && extra ? `${item.description} (${extra})` : item.description;
       doc.text(desc.substring(0, 50) + (desc.length > 50 ? "…" : ""), 50, rowY);
       doc.text(Number(item.amount || 0).toFixed(2), pageWidth - 120, rowY);

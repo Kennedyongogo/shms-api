@@ -11,7 +11,7 @@ const {
   Service,
   LabOrder,
   LabOrderItem,
-  LabResult,
+  LabResultData,
   Bill,
   BillItem,
   Payment,
@@ -274,7 +274,7 @@ const setStatus = async (req, res) => {
                 model: LabOrderItem,
                 as: "items",
                 required: false,
-                include: [{ model: LabResult, as: "result", required: false }],
+                include: [{ model: LabResultData, as: "result", required: false }],
               },
             ],
           },
@@ -713,7 +713,7 @@ const remove = async (req, res) => {
         for (const order of labOrders) {
           const items = order.items || [];
           for (const item of items) {
-            await LabResult.destroy({
+            await LabResultData.destroy({
               where: { lab_order_item_id: item.id },
               ...tx,
             });

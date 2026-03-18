@@ -3,7 +3,8 @@ const {
   LabOrder,
   LabOrderItem,
   LabTest,
-  LabResult,
+  LabResultData,
+  LabTestTemplate,
   Consultation,
   Appointment,
   Staff,
@@ -325,9 +326,9 @@ const getById = async (req, res) => {
           as: "items",
           required: false,
           include: [
-            { model: LabTest, as: "labTest", required: false },
+            { model: LabTest, as: "labTest", required: false, include: [{ model: LabTestTemplate, as: "template", required: false }] },
             {
-              model: LabResult,
+              model: LabResultData,
               as: "result",
               required: false,
               include: [
@@ -414,9 +415,9 @@ const list = async (req, res) => {
           as: "items",
           required: false,
           include: [
-            { model: LabTest, as: "labTest", required: false },
+            { model: LabTest, as: "labTest", required: false, include: [{ model: LabTestTemplate, as: "template", required: false }] },
             {
-              model: LabResult,
+              model: LabResultData,
               as: "result",
               required: false,
               include: [
@@ -465,7 +466,7 @@ const remove = async (req, res) => {
           model: LabOrderItem,
           as: "items",
           required: false,
-          include: [{ model: LabResult, as: "result", required: false }],
+          include: [{ model: LabResultData, as: "result", required: false }],
         },
       ],
     });
