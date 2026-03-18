@@ -64,6 +64,7 @@ const list = async (req, res) => {
   try {
     const { page, limit, offset } = parsePagination(req.query);
     const { search } = req.query;
+    const hid = req.user?.hospital_id ?? null;
 
     const where = {};
     if (search) {
@@ -76,7 +77,20 @@ const list = async (req, res) => {
       where,
       limit,
       offset,
-      include,
+      include: include.map((inc) => {
+        if (inc?.as !== "labOrderItem") return inc;
+        return {
+          ...inc,
+          include: (inc.include || []).map((inner) => {
+            if (inner?.as !== "labOrder") return inner;
+            return {
+              ...inner,
+              required: hid != null,
+              where: hid != null ? { hospital_id: hid } : undefined,
+            };
+          }),
+        };
+      }),
       order: [["result_date", "DESC"]],
     });
 
@@ -93,6 +107,7 @@ const list = async (req, res) => {
 const enterResults = async (req, res) => {
   try {
     const { lab_order_item_id, lab_technician_id, result_date, results, interpretation } = req.body;
+    const hid = req.user?.hospital_id ?? null;
     if (!lab_order_item_id) {
       return res.status(400).json({ success: false, message: "lab_order_item_id is required" });
     }
@@ -100,13 +115,27 @@ const enterResults = async (req, res) => {
     const item = await LabOrderItem.findByPk(lab_order_item_id, { include: [{ model: LabTest, as: "labTest", required: false, include: [{ model: LabTestTemplate, as: "template", required: false }] }] });
     if (!item) return res.status(404).json({ success: false, message: "Lab order item not found" });
 
+    // Hospital scoping: ensure the parent lab order belongs to the current hospital.
+    if (hid != null) {
+      const scopedOrder = await LabOrder.findOne({
+        where: { id: item.lab_order_id, hospital_id: hid },
+        attributes: ["id", "consultation_id"],
+      });
+      if (!scopedOrder) {
+        return res.status(404).json({ success: false, message: "Lab order not found" });
+      }
+    }
+
     // Only Super Admin, lab technician, or doctor assigned to the appointment can enter/update results (like consultation).
     if (!isSuperAdmin(req)) {
       const staff = await getCurrentStaff(req);
       if (!staff) {
         return res.status(403).json({ success: false, message: "Access denied: staff account required" });
       }
-      const order = await LabOrder.findByPk(item.lab_order_id, { attributes: ["id", "consultation_id"] });
+      const order = await LabOrder.findOne({
+        where: hid != null ? { id: item.lab_order_id, hospital_id: hid } : { id: item.lab_order_id },
+        attributes: ["id", "consultation_id"],
+      });
       if (!order) return res.status(404).json({ success: false, message: "Lab order not found" });
       const isLabTech = isLabTechnicianStaff(staff);
       const isAssignedDoctor = await isAssignedDoctorForLabOrder(req, order);

@@ -216,6 +216,7 @@ const updateStatus = async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
+    const hid = req.user?.hospital_id ?? null;
     const allowed = new Set([
       "pending",
       "in_progress",
@@ -231,7 +232,9 @@ const updateStatus = async (req, res) => {
             'status must be one of: "pending", "in_progress", "completed", "cancelled"',
         });
     }
-    const order = await LabOrder.findByPk(id);
+    const order = await LabOrder.findOne({
+      where: hid != null ? { id, hospital_id: hid } : { id },
+    });
     if (!order)
       return res
         .status(404)
@@ -305,7 +308,9 @@ const updateStatus = async (req, res) => {
 const getById = async (req, res) => {
   try {
     const { id } = req.params;
-    const order = await LabOrder.findByPk(id, {
+    const hid = req.user?.hospital_id ?? null;
+    const order = await LabOrder.findOne({
+      where: hid != null ? { id, hospital_id: hid } : { id },
       include: [
         {
           model: Patient,
@@ -360,6 +365,7 @@ const list = async (req, res) => {
       req.query;
 
     const where = {};
+    if (req.user?.hospital_id) where.hospital_id = req.user.hospital_id;
     if (status) where.status = status;
     if (patient_id) where.patient_id = patient_id;
     if (doctor_id) where.doctor_id = doctor_id;
@@ -460,7 +466,9 @@ const list = async (req, res) => {
 const remove = async (req, res) => {
   try {
     const { id } = req.params;
-    const order = await LabOrder.findByPk(id, {
+    const hid = req.user?.hospital_id ?? null;
+    const order = await LabOrder.findOne({
+      where: hid != null ? { id, hospital_id: hid } : { id },
       include: [
         {
           model: LabOrderItem,
@@ -490,7 +498,10 @@ const remove = async (req, res) => {
         where: { lab_order_id: id },
         transaction: t,
       });
-      await LabOrder.destroy({ where: { id }, transaction: t });
+      await LabOrder.destroy({
+        where: hid != null ? { id, hospital_id: hid } : { id },
+        transaction: t,
+      });
     });
     await auditLog(req, { action: "DELETE_LABORDER", table_name: "LabOrder", record_id: id });
     return res
