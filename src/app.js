@@ -9,6 +9,7 @@ const { authenticateUser, requireRoles } = require("./middleware/auth");
 
 // Hospital routes (38)
 const authRoutes = require("./routes/authRoutes");
+const adminAuthRoutes = require("./routes/adminAuthRoutes");
 const patientAuthRoutes = require("./routes/patientAuthRoutes");
 const userRoutes = require("./routes/userRoutes");
 const roleRoutes = require("./routes/roleRoutes");
@@ -94,6 +95,7 @@ app.use("/uploads", express.static(uploadsRoot));
 // API routes
 console.log("🔗 Registering API routes...");
 app.use("/api/auth", authRoutes);
+app.use("/api/admin-auth", adminAuthRoutes);
 app.use("/api/subscription", subscriptionRoutes);
 app.use("/api/patient-auth", patientAuthRoutes);
 // Users/Roles: any authenticated user can view (GET); only Super Admin can modify (enforced inside route files)

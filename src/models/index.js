@@ -7,6 +7,7 @@ const RolePermission = require("./rolePermission")(sequelize);
 const RoleMenuItem = require("./roleMenuItem")(sequelize);
 
 const User = require("./user")(sequelize);
+const Admin = require("./admin")(sequelize);
 const Hospital = require("./hospital")(sequelize);
 const Department = require("./department")(sequelize);
 const Ward = require("./ward")(sequelize);
@@ -93,6 +94,7 @@ const models = {
   RolePermission,
   RoleMenuItem,
   User,
+  Admin,
   Hospital,
   Department,
   Ward,
@@ -170,6 +172,7 @@ const initializeModels = async () => {
     await RolePermission.sync({ force: false, alter: false });
     await RoleMenuItem.sync({ force: false, alter: false });
     await User.sync({ force: false, alter: false });
+    await Admin.sync({ force: false, alter: false });
 
     // 2) HOSPITAL STRUCTURE
     await Hospital.sync({ force: false, alter: false });
