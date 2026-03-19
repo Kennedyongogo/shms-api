@@ -31,6 +31,10 @@ module.exports = (sequelize) => {
         type: DataTypes.DATE,
         allowNull: true,
       },
+      profile_image_path: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+      },
     },
     {
       tableName: "admins",

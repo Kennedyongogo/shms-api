@@ -12,12 +12,12 @@ const viewLogs = async (req, res) => {
     if (action) where.action = action;
 
     const hid = getHospitalId(req);
+    if (hid != null) where.hospital_id = hid;
     const userInclude = {
       model: User,
       as: "user",
       attributes: ["id", "full_name", "email", "hospital_id"],
-      required: hid != null,
-      ...(hid != null ? { where: { hospital_id: hid } } : {}),
+      required: false,
     };
 
     const { count, rows } = await AuditLog.findAndCountAll({
@@ -47,7 +47,8 @@ const viewOneLog = async (req, res) => {
       return res.status(404).json({ success: false, message: "Audit log not found" });
     }
     const hid = getHospitalId(req);
-    if (hid != null && log.user?.hospital_id !== hid)
+    // Prefer direct hospital_id scoping; fallback to user-hospital for older rows.
+    if (hid != null && log.hospital_id !== hid && log.user?.hospital_id !== hid)
       return res.status(404).json({ success: false, message: "Audit log not found" });
     return res.status(200).json({ success: true, data: log });
   } catch (error) {

@@ -26,13 +26,23 @@ module.exports = (sequelize) => {
         type: DataTypes.STRING(100),
         allowNull: true,
       },
+      hospital_id: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: { model: "hospitals", key: "id" },
+      },
     },
     {
       tableName: "audit_logs",
       timestamps: true,
       createdAt: "timestamp",
       updatedAt: false,
-      indexes: [{ fields: ["user_id"] }, { fields: ["table_name"] }, { fields: ["timestamp"] }],
+      indexes: [
+        { fields: ["user_id"] },
+        { fields: ["hospital_id"] },
+        { fields: ["table_name"] },
+        { fields: ["timestamp"] },
+      ],
     }
   );
 

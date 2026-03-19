@@ -28,6 +28,7 @@ const SILVER_PACKAGE_KEYS = [
   "pharmacy",
   "billing",
   "users",
+  "audit-logs",
   "settings",
 ];
 

@@ -371,6 +371,7 @@ const createUploadDirectories = () => {
     path.join(__dirname, "..", "uploads", "news", "images"),
     path.join(__dirname, "..", "uploads", "demo-videos"),
     path.join(__dirname, "..", "uploads", "carlvyne", "profile-images"),
+    path.join(__dirname, "..", "uploads", "admins", "profile-images"),
   ];
 
   uploadDirs.forEach((dir) => {

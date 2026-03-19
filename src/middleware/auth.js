@@ -1,5 +1,5 @@
 const jwt = require("jsonwebtoken");
-const { User, Role, Permission, Patient, CarlvyneAccount } = require("../models");
+const { User, Role, Permission, Patient, CarlvyneAccount, Admin } = require("../models");
 const config = require("../config/config");
 
 const extractBearerToken = (req) => {
@@ -71,6 +71,36 @@ exports.authenticateUser = async (req, res, next) => {
 };
 
 exports.authenticateToken = exports.authenticateUser;
+
+// Authenticate admins (Admin model) for public admin portal
+exports.authenticateAdmin = async (req, res, next) => {
+  const token = extractBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ success: false, message: "Access denied, no token provided" });
+  }
+
+  try {
+    const decoded = jwt.verify(token, config.jwtSecret);
+    if (decoded.type !== "admin") {
+      return res.status(403).json({ success: false, message: "Access denied, invalid token type" });
+    }
+
+    const admin = await Admin.findByPk(decoded.id, {
+      attributes: { exclude: ["password"] },
+    });
+
+    if (!admin || admin.status !== "active") {
+      return res.status(403).json({ success: false, message: "Access denied, invalid or inactive admin" });
+    }
+
+    req.adminId = admin.id;
+    req.admin = admin;
+    req.userType = "admin";
+    next();
+  } catch (error) {
+    return res.status(400).json({ success: false, message: "Invalid token" });
+  }
+};
 
 // Authenticate Carlvyne owners (CarlvyneAccount model) for M&E portal
 exports.authenticateCarlvyneOwner = async (req, res, next) => {

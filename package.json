@@ -6,6 +6,8 @@
   "scripts": {
     "start": "nodemon src/server.js",
     "start:cluster": "node src/cluster.js",
+    "migrate:admin-image": "node scripts/addAdminProfileImageColumn.js",
+    "migrate:auditlog-hospital": "node scripts/addAuditLogHospitalColumn.js",
     "test": "echo \"No tests specified\" && exit 0"
   },
   "author": "kennedy ongongo",
