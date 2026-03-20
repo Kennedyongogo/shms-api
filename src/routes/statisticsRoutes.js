@@ -11,5 +11,6 @@ router.get("/admissions/chart", statisticsController.getAdmissionsChart);
 router.get("/my-activity", statisticsController.getMyActivity);
 router.get("/my-activity/chart", statisticsController.getMyActivityChart);
 router.get("/my-activity/detail", statisticsController.getMyActivityDetail);
+router.get("/packages/hospitals", statisticsController.getHospitalsCountByPackage);
 
 module.exports = router;

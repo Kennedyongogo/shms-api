@@ -551,6 +551,34 @@ const getOverview = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/admin-auth/packages/hospitals
+ * Returns hospital counts grouped by subscription_package for the public admin portal.
+ * Uses authenticateAdmin middleware (same as /overview).
+ */
+const getHospitalsCountByPackage = async (req, res) => {
+  try {
+    const silver = await Hospital.count({ where: { subscription_package: "silver" } });
+    const gold = await Hospital.count({ where: { subscription_package: "gold" } });
+    const total = Number(silver || 0) + Number(gold || 0);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        total,
+        silver: Number(silver || 0),
+        gold: Number(gold || 0),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching hospitals count by package",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   register,
   login,
@@ -559,6 +587,7 @@ module.exports = {
   changePassword,
   updateMyProfileImage,
   getOverview,
+  getHospitalsCountByPackage,
   create,
   getAll,
   getById,

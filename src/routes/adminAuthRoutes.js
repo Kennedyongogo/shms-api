@@ -7,6 +7,7 @@ const {
   changePassword,
   updateMyProfileImage,
   getOverview,
+  getHospitalsCountByPackage,
   create,
   getAll,
   getById,
@@ -32,6 +33,7 @@ router.post("/", authenticateAdmin, uploadAdminProfileImage, handleUploadError, 
 router.put("/:id", authenticateAdmin, uploadAdminProfileImage, handleUploadError, update);
 router.put("/:id/profile-image", authenticateAdmin, uploadAdminProfileImage, handleUploadError, updateProfileImage);
 router.delete("/:id", authenticateAdmin, remove);
+router.get("/packages/hospitals", authenticateAdmin, getHospitalsCountByPackage);
 
 module.exports = router;
 

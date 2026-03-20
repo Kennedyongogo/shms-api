@@ -887,6 +887,73 @@ const getMyActivityDetail = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/statistics/packages/hospitals
+ * Returns hospital counts grouped by subscription_package.
+ * - Super Admin (no hospital_id scope): returns counts for all hospitals.
+ * - Hospital-scoped user: returns a { silver|gold } 1/0 split for that hospital.
+ */
+const getHospitalsCountByPackage = async (req, res) => {
+  try {
+    const hid = getHospitalId(req);
+
+    // Scoped user: return counts for the single hospital (1 for its package, 0 for the other).
+    if (hid != null) {
+      const hospital = await Hospital.findByPk(hid, { attributes: ["subscription_package"] });
+      const pkg = hospital?.subscription_package || "silver";
+
+      const silver = pkg === "silver" ? 1 : 0;
+      const gold = pkg === "gold" ? 1 : 0;
+
+      return res.status(200).json({
+        success: true,
+        data: {
+          total: 1,
+          silver,
+          gold,
+        },
+      });
+    }
+
+    // Super Admin: aggregate across all hospitals.
+    const rows = await Hospital.findAll({
+      attributes: [
+        "subscription_package",
+        [sequelize.fn("COUNT", sequelize.col("id")), "count"],
+      ],
+      group: ["subscription_package"],
+      raw: true,
+    });
+
+    let silver = 0;
+    let gold = 0;
+    let total = 0;
+
+    for (const r of rows) {
+      const pkg = r.subscription_package || "silver";
+      const count = Number(r.count) || 0;
+      total += count;
+      if (pkg === "silver") silver += count;
+      if (pkg === "gold") gold += count;
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        total,
+        silver,
+        gold,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching hospitals count by package",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   getAll,
   getAppointmentsChart,
@@ -895,5 +962,6 @@ module.exports = {
   getAdmissionsChart,
   getMyActivity,
   getMyActivityChart,
-   getMyActivityDetail,
+  getMyActivityDetail,
+  getHospitalsCountByPackage,
 };

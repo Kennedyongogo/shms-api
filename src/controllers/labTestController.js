@@ -68,6 +68,48 @@ const getById = async (req, res) => {
   }
 };
 
+// Lookup by (hospital_id + test_name). This is for UI flows where the table row click uses the name.
+const getByName = async (req, res) => {
+  try {
+    const { Op } = require("sequelize");
+    const testName =
+      req.query.test_name ?? req.query.testName ?? req.body?.test_name ?? req.body?.testName ?? null;
+    const hospitalIdFromQuery = req.query.hospital_id ?? req.query.hospitalId ?? null;
+
+    if (!testName) {
+      return res.status(400).json({ success: false, message: "test_name is required" });
+    }
+    const cleanName = String(testName).trim();
+    if (!cleanName) {
+      return res.status(400).json({ success: false, message: "test_name cannot be empty" });
+    }
+
+    // Secure scoping: if the logged-in user has a hospital_id, always force it.
+    const hospitalId = req.user?.hospital_id ?? hospitalIdFromQuery;
+    if (!hospitalId) {
+      return res.status(400).json({ success: false, message: "hospital_id is required" });
+    }
+
+    const record = await LabTest.findOne({
+      where: {
+        hospital_id: hospitalId,
+        // Case-insensitive exact match.
+        test_name: { [Op.iLike]: cleanName },
+      },
+      include: includeTemplate,
+      order: [["createdAt", "DESC"]],
+    });
+
+    if (!record) {
+      return res.status(404).json({ success: false, message: "LabTest not found" });
+    }
+
+    return res.status(200).json({ success: true, data: record });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: "Error fetching LabTest", error: error.message });
+  }
+};
+
 // Override create/update to support saving templates.
 const createWithTemplate = async (req, res) => {
   try {
@@ -137,5 +179,5 @@ const updateWithTemplate = async (req, res) => {
   }
 };
 
-module.exports = { ...crud, getAll, getById, create: createWithTemplate, update: updateWithTemplate };
+module.exports = { ...crud, getAll, getById, getByName, create: createWithTemplate, update: updateWithTemplate };
 

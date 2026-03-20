@@ -171,12 +171,65 @@ const enterResults = async (req, res) => {
         return { ok: false, errors: ["results must be an object keyed by field key"] };
       }
       const errors = [];
+
+    const normalizeScalarForCompare = (v) => {
+      if (v === null || v === undefined) return null;
+      if (typeof v === "boolean") return v;
+      if (typeof v === "number") return v;
+      const s = String(v).trim();
+      const lower = s.toLowerCase();
+      if (lower === "true") return true;
+      if (lower === "false") return false;
+      if (s !== "" && /^-?\d+(\.\d+)?$/.test(s)) {
+        const n = Number(s);
+        return Number.isFinite(n) ? n : s;
+      }
+      return s;
+    };
+
+    const evaluateShowIfRule = (rule) => {
+      if (!rule || typeof rule !== "object") return true;
+
+      if (Array.isArray(rule.all)) {
+        return rule.all.every((r) => evaluateShowIfRule(r));
+      }
+      if (Array.isArray(rule.any)) {
+        return rule.any.some((r) => evaluateShowIfRule(r));
+      }
+
+      const key = rule.key ?? rule.field ?? rule.dep_key ?? null;
+      if (!key) return true;
+      const expected = rule.equals ?? rule.value ?? null;
+      const actual = vals?.[key];
+
+      const nActual = normalizeScalarForCompare(actual);
+      const nExpected = normalizeScalarForCompare(expected);
+
+      // If actual is an array, treat equals as "contains".
+      if (Array.isArray(actual)) {
+        const normalizedArray = actual.map((x) => normalizeScalarForCompare(x));
+        return normalizedArray.some((x) => x === nExpected);
+      }
+
+      if (nActual === null) return nExpected === null;
+      return nActual === nExpected;
+    };
+
+    const shouldShowField = (f) => {
+      const rule = f?.show_if ?? f?.visible_if ?? f?.showIf ?? null;
+      return evaluateShowIfRule(rule);
+    };
+
       for (const f of fields) {
         const key = String(f.key || f.name || "").trim();
         if (!key) continue;
-        const required = !!f.required;
-        const type = String(f.type || "text").toLowerCase();
-        const v = vals[key];
+      const required = !!f.required;
+      const type = String(f.type || "text").toLowerCase();
+      const v = vals[key];
+      const visible = shouldShowField(f);
+
+      // If the field is conditionally hidden, don't validate it at all.
+      if (!visible) continue;
 
         const isEmpty =
           v === undefined ||
@@ -184,7 +237,7 @@ const enterResults = async (req, res) => {
           (typeof v === "string" && v.trim() === "") ||
           (Array.isArray(v) && v.length === 0);
 
-        if (required && isEmpty) {
+      if (required && isEmpty) {
           errors.push(`${key} is required`);
           continue;
         }
@@ -256,7 +309,40 @@ const enterResults = async (req, res) => {
   }
 };
 
+const getById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const hid = req.user?.hospital_id ?? null;
+
+    const record = await LabResultData.findByPk(id, {
+      include: include.map((inc) => {
+        if (inc?.as !== "labOrderItem") return inc;
+        return {
+          ...inc,
+          include: (inc.include || []).map((inner) => {
+            if (inner?.as !== "labOrder") return inner;
+            return {
+              ...inner,
+              required: hid != null,
+              where: hid != null ? { hospital_id: hid } : undefined,
+            };
+          }),
+        };
+      }),
+    });
+
+    if (!record) return res.status(404).json({ success: false, message: "Lab result not found" });
+    if (hid != null && !record.labOrderItem?.labOrder) {
+      return res.status(404).json({ success: false, message: "Lab result not found" });
+    }
+
+    return res.status(200).json({ success: true, data: record });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: "Error fetching lab result", error: error.message });
+  }
+};
+
 const updateResults = enterResults;
 
-module.exports = { list, enterResults, updateResults };
+module.exports = { list, enterResults, updateResults, getById };
 
