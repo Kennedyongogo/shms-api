@@ -8,6 +8,8 @@ const {
   updateMyProfileImage,
   getOverview,
   getHospitalsCountByPackage,
+  getSubscriptionLedger,
+  getRegistrationInvoices,
   create,
   getAll,
   getById,
@@ -27,13 +29,15 @@ router.patch("/me", authenticateAdmin, updateMe);
 router.post("/change-password", authenticateAdmin, changePassword);
 router.put("/me/profile-image", authenticateAdmin, uploadAdminProfileImage, handleUploadError, updateMyProfileImage);
 router.get("/overview", authenticateAdmin, getOverview);
+router.get("/packages/hospitals", authenticateAdmin, getHospitalsCountByPackage);
+router.get("/ledger/subscriptions", authenticateAdmin, getSubscriptionLedger);
+router.get("/ledger/invoices", authenticateAdmin, getRegistrationInvoices);
 router.get("/", authenticateAdmin, getAll);
 router.get("/:id", authenticateAdmin, getById);
 router.post("/", authenticateAdmin, uploadAdminProfileImage, handleUploadError, create);
 router.put("/:id", authenticateAdmin, uploadAdminProfileImage, handleUploadError, update);
 router.put("/:id/profile-image", authenticateAdmin, uploadAdminProfileImage, handleUploadError, updateProfileImage);
 router.delete("/:id", authenticateAdmin, remove);
-router.get("/packages/hospitals", authenticateAdmin, getHospitalsCountByPackage);
 
 module.exports = router;
 

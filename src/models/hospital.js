@@ -50,6 +50,12 @@ module.exports = (sequelize) => {
         allowNull: true,
         defaultValue: "#00897B",
       },
+      registration_paystack_reference: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+        unique: true,
+        comment: "Paystack transaction reference used when this hospital was created (prevents reuse).",
+      },
     },
     {
       tableName: "hospitals",

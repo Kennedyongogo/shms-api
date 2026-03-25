@@ -9,6 +9,8 @@ const RoleMenuItem = require("./roleMenuItem")(sequelize);
 const User = require("./user")(sequelize);
 const Admin = require("./admin")(sequelize);
 const Hospital = require("./hospital")(sequelize);
+const RegistrationPackagePayment = require("./registrationPackagePayment")(sequelize);
+const RegistrationInvoice = require("./registrationInvoice")(sequelize);
 const Department = require("./department")(sequelize);
 const Ward = require("./ward")(sequelize);
 const Bed = require("./bed")(sequelize);
@@ -96,6 +98,8 @@ const models = {
   User,
   Admin,
   Hospital,
+  RegistrationPackagePayment,
+  RegistrationInvoice,
   Department,
   Ward,
   Bed,
@@ -176,6 +180,8 @@ const initializeModels = async () => {
 
     // 2) HOSPITAL STRUCTURE
     await Hospital.sync({ force: false, alter: false });
+    await RegistrationPackagePayment.sync({ force: false, alter: false });
+    await RegistrationInvoice.sync({ force: false, alter: false });
     await Department.sync({ force: false, alter: false });
     await Ward.sync({ force: false, alter: false });
     await Bed.sync({ force: false, alter: false });
@@ -280,6 +286,18 @@ const setupAssociations = () => {
 
     Hospital.hasMany(User, { foreignKey: "hospital_id", as: "users" });
     User.belongsTo(Hospital, { foreignKey: "hospital_id", as: "hospital" });
+
+    Hospital.hasMany(RegistrationPackagePayment, {
+      foreignKey: "hospital_id",
+      as: "registrationPackagePayments",
+    });
+    RegistrationPackagePayment.belongsTo(Hospital, { foreignKey: "hospital_id", as: "hospital" });
+
+    Hospital.hasMany(RegistrationInvoice, {
+      foreignKey: "hospital_id",
+      as: "registrationInvoices",
+    });
+    RegistrationInvoice.belongsTo(Hospital, { foreignKey: "hospital_id", as: "hospital" });
 
     Hospital.hasMany(Role, { foreignKey: "hospital_id", as: "roles" });
     Role.belongsTo(Hospital, { foreignKey: "hospital_id", as: "hospital" });

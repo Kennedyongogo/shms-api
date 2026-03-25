@@ -3,7 +3,8 @@ const jwt = require("jsonwebtoken");
 const path = require("path");
 const { Op } = require("sequelize");
 const config = require("../config/config");
-const { Admin, Hospital, AuditLog } = require("../models");
+const { Admin, Hospital, AuditLog, RegistrationPackagePayment, RegistrationInvoice } = require("../models");
+const { getSubscriptionStatus } = require("../utils/subscriptionStatus");
 const { deleteFile, toRelativeUploadPath } = require("../middleware/upload");
 
 const sanitizeAdmin = (admin) => {
@@ -579,6 +580,194 @@ const getHospitalsCountByPackage = async (req, res) => {
   }
 };
 
+function formatYmd(d) {
+  if (!d) return null;
+  const x = new Date(d);
+  if (Number.isNaN(x.getTime())) return null;
+  const y = x.getFullYear();
+  const m = String(x.getMonth() + 1).padStart(2, "0");
+  const day = String(x.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function dueDateForLedger(hospital) {
+  const sub = getSubscriptionStatus(hospital);
+  const trialEndsAt = hospital.trial_ends_at ? new Date(hospital.trial_ends_at) : null;
+  const subscriptionEndsAt = hospital.subscription_ends_at ? new Date(hospital.subscription_ends_at) : null;
+  if (sub.status === "trial" && trialEndsAt) return trialEndsAt;
+  if (subscriptionEndsAt) return subscriptionEndsAt;
+  if (trialEndsAt) return trialEndsAt;
+  return null;
+}
+
+/** April 1, 2025 – March 31, 2026 (common FY 2025-26) */
+function paidAtInFy2025_26(paidAt) {
+  if (!paidAt) return false;
+  const t = new Date(paidAt).getTime();
+  const start = new Date(2025, 3, 1);
+  const end = new Date(2026, 2, 31, 23, 59, 59, 999);
+  return t >= start.getTime() && t <= end.getTime();
+}
+
+const getSubscriptionLedger = async (req, res) => {
+  try {
+    const payments = await RegistrationPackagePayment.findAll({
+      include: [
+        {
+          model: Hospital,
+          as: "hospital",
+          required: true,
+          attributes: [
+            "id",
+            "name",
+            "subscription_package",
+            "trial_ends_at",
+            "subscription_ends_at",
+            "createdAt",
+          ],
+        },
+      ],
+      order: [
+        ["paid_at", "DESC"],
+        ["createdAt", "DESC"],
+      ],
+    });
+
+    let fyRevenueKes = 0;
+    let totalRevenueAllKes = 0;
+    const hospitalIds = new Set();
+
+    const rows = payments.map((p) => {
+      const pay = p.toJSON ? p.toJSON() : p;
+      const h = pay.hospital;
+      const pkg = String(pay.subscription_package || "silver").toLowerCase();
+      const packageLabel = pkg === "gold" ? "Gold" : "Silver";
+      const amountKes = Number(pay.amount_kes_subunits || 0) / 100;
+      totalRevenueAllKes += amountKes;
+      if (paidAtInFy2025_26(pay.paid_at)) {
+        fyRevenueKes += amountKes;
+      }
+      if (h?.id) hospitalIds.add(h.id);
+
+      const due = h ? dueDateForLedger(h) : null;
+
+      return {
+        paymentId: pay.id,
+        hospitalId: h?.id,
+        facility: h?.name || "—",
+        package: packageLabel,
+        registered: formatYmd(pay.paid_at || pay.createdAt) || "—",
+        dueDate: formatYmd(due) || "—",
+        amount: Math.round(amountKes * 100) / 100,
+        currency: "KES",
+        status: "Paid",
+        paystackReference: pay.paystack_reference || null,
+        payerEmail: pay.payer_email || null,
+        channel: pay.channel || null,
+        icon: ["apartment", "medical", "health"][
+          Math.abs(String(h?.name || "").split("").reduce((a, c) => a + c.charCodeAt(0), 0)) % 3
+        ],
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        fiscalYearLabel: "2025-26",
+        rows,
+        summary: {
+          paymentCount: payments.length,
+          uniqueHospitalCount: hospitalIds.size,
+          totalRevenueAllKes: Math.round(totalRevenueAllKes * 100) / 100,
+          totalRevenueFyKes: Math.round(fyRevenueKes * 100) / 100,
+        },
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching subscription ledger",
+      error: error.message,
+    });
+  }
+};
+
+const getRegistrationInvoices = async (req, res) => {
+  try {
+    const invoices = await RegistrationInvoice.findAll({
+      include: [
+        {
+          model: Hospital,
+          as: "hospital",
+          required: true,
+          attributes: ["id", "name", "subscription_package", "trial_ends_at", "subscription_ends_at", "createdAt"],
+        },
+      ],
+      order: [["createdAt", "DESC"]],
+    });
+
+    let unpaidCount = 0;
+    let paidCount = 0;
+    let unpaidAmountKes = 0;
+    let paidAmountKes = 0;
+
+    const rows = invoices.map((inv) => {
+      const row = inv.toJSON ? inv.toJSON() : inv;
+      const h = row.hospital;
+      const pkg = String(row.subscription_package || "silver").toLowerCase();
+      const packageLabel = pkg === "gold" ? "Gold" : "Silver";
+      const amountKes = Number(row.amount_kes_subunits || 0) / 100;
+      const rounded = Math.round(amountKes * 100) / 100;
+
+      if (row.status === "paid") {
+        paidCount += 1;
+        paidAmountKes += amountKes;
+      } else {
+        unpaidCount += 1;
+        unpaidAmountKes += amountKes;
+      }
+
+      const due = h ? dueDateForLedger(h) : null;
+
+      return {
+        invoiceId: row.id,
+        hospitalId: h?.id,
+        facility: h?.name || "—",
+        package: packageLabel,
+        status: row.status === "paid" ? "Paid" : "Unpaid",
+        amount: rounded,
+        currency: row.currency || "KES",
+        createdAt: formatYmd(row.createdAt) || "—",
+        paidAt: formatYmd(row.paid_at) || null,
+        dueDate: formatYmd(due) || "—",
+        icon: ["apartment", "medical", "health"][
+          Math.abs(String(h?.name || "").split("").reduce((a, c) => a + c.charCodeAt(0), 0)) % 3
+        ],
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        rows,
+        summary: {
+          total: invoices.length,
+          unpaidCount,
+          paidCount,
+          unpaidAmountKes: Math.round(unpaidAmountKes * 100) / 100,
+          paidAmountKes: Math.round(paidAmountKes * 100) / 100,
+        },
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching registration invoices",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   register,
   login,
@@ -588,6 +777,8 @@ module.exports = {
   updateMyProfileImage,
   getOverview,
   getHospitalsCountByPackage,
+  getSubscriptionLedger,
+  getRegistrationInvoices,
   create,
   getAll,
   getById,

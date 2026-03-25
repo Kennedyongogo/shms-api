@@ -8,6 +8,8 @@
     "start:cluster": "node src/cluster.js",
     "migrate:admin-image": "node scripts/addAdminProfileImageColumn.js",
     "migrate:auditlog-hospital": "node scripts/addAuditLogHospitalColumn.js",
+    "migrate:hospital-paystack-ref": "node scripts/addHospitalRegistrationPaystackReference.js",
+    "migrate:registration-package-payments": "node scripts/addRegistrationPackagePaymentsTable.js",
     "test": "echo \"No tests specified\" && exit 0"
   },
   "author": "kennedy ongongo",
@@ -15,7 +17,6 @@
   "license": "ISC",
   "dependencies": {
     "adm-zip": "^0.5.16",
-    "axios": "^1.10.0",
     "base-64": "^1.0.0",
     "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.2",

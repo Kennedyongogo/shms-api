@@ -1,6 +1,8 @@
 const jwt = require("jsonwebtoken");
-const { User, Role, Permission, Patient, CarlvyneAccount, Admin } = require("../models");
+const { User, Role, Permission, Patient, CarlvyneAccount, Admin, Hospital } = require("../models");
 const config = require("../config/config");
+const { isHospitalSubscriptionActive, getSubscriptionStatus } = require("../utils/subscriptionStatus");
+const { getPackageAmountKesSubunits, PACKAGE_AMOUNT_KES_SUBUNITS } = require("../constants/registrationPackages");
 
 const extractBearerToken = (req) => {
   const authHeader = req.header("Authorization");
@@ -59,6 +61,39 @@ exports.authenticateUser = async (req, res, next) => {
     });
     req.role = role ? { id: role.id, name: role.name } : null;
     req.permissions = role?.permissions?.map((p) => p.name) ?? [];
+
+    if (!config.disableSubscriptionEnforcement && user.hospital_id) {
+      const hospital = await Hospital.findByPk(user.hospital_id);
+      if (hospital && !isHospitalSubscriptionActive(hospital)) {
+        const subscriptionStatus = getSubscriptionStatus(hospital);
+        const isSuperAdmin = role?.name === "Super Admin";
+        if (isSuperAdmin) {
+          const pkg = String(hospital.subscription_package || "silver").toLowerCase();
+          return res.status(403).json({
+            success: false,
+            code: "PAYMENT_REQUIRED",
+            message:
+              subscriptionStatus.message ||
+              "Subscription inactive. Complete payment or wait for your organization subscription to be renewed.",
+            data: {
+              hospital_id: hospital.id,
+              subscription_package: hospital.subscription_package,
+              amount_kes_subunits: getPackageAmountKesSubunits(pkg),
+              package_amounts_kes_subunits: { ...PACKAGE_AMOUNT_KES_SUBUNITS },
+              paystack_public_key: (config.paystack && config.paystack.publicKey) || process.env.PAYSTACK_PUBLIC_KEY || null,
+            },
+            subscription_status: subscriptionStatus,
+          });
+        }
+        return res.status(403).json({
+          success: false,
+          code: "SUBSCRIPTION_EXPIRED",
+          message:
+            "Your organization's subscription has expired or is inactive. Please contact your Super Admin to renew the subscription.",
+          subscription_status: subscriptionStatus,
+        });
+      }
+    }
 
     next();
   } catch (error) {

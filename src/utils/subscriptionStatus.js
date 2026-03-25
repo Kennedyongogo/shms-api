@@ -72,12 +72,24 @@ function getSubscriptionStatus(hospital) {
 }
 
 /**
- * Add 7 days from now for trial end (used at registration).
+ * Add 7 days from now for trial end (legacy callers).
  * @returns {Date}
  */
 function getTrialEndsAt() {
   const d = new Date();
   d.setDate(d.getDate() + TRIAL_DAYS);
+  return d;
+}
+
+/**
+ * Trial end = now + N minutes (organization registration).
+ * @param {number} minutes
+ * @returns {Date}
+ */
+function getTrialEndsAtMinutes(minutes) {
+  const m = Math.max(1, Number(minutes) || 10);
+  const d = new Date();
+  d.setMinutes(d.getMinutes() + m);
   return d;
 }
 
@@ -95,11 +107,28 @@ function getNextSubscriptionEndsAt(currentEndsAt, days = DEFAULT_SUBSCRIPTION_DA
   return next;
 }
 
+/**
+ * Paid period end = base + N minutes (organization subscription after Paystack).
+ * @param {Date|null} currentEndsAt
+ * @param {number} minutes
+ * @returns {Date}
+ */
+function getNextSubscriptionEndsAtMinutes(currentEndsAt, minutes) {
+  const m = Math.max(1, Number(minutes) || 10);
+  const now = new Date();
+  const base = currentEndsAt && new Date(currentEndsAt) > now ? new Date(currentEndsAt) : now;
+  const next = new Date(base);
+  next.setMinutes(next.getMinutes() + m);
+  return next;
+}
+
 module.exports = {
   TRIAL_DAYS,
   DEFAULT_SUBSCRIPTION_DAYS,
   isHospitalSubscriptionActive,
   getSubscriptionStatus,
   getTrialEndsAt,
+  getTrialEndsAtMinutes,
   getNextSubscriptionEndsAt,
+  getNextSubscriptionEndsAtMinutes,
 };

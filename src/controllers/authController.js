@@ -1,11 +1,18 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const path = require("path");
-const { User, Role, Hospital, RoleMenuItem } = require("../models");
+const { User, Role, Hospital, RoleMenuItem, RegistrationPackagePayment, RegistrationInvoice } = require("../models");
 const config = require("../config/config");
+const { getPackageAmountKesSubunits, PACKAGE_AMOUNT_KES_SUBUNITS } = require("../constants/registrationPackages");
+const { verifyRegistrationTransaction } = require("../services/paystackService");
 const { auditLog } = require("../utils/auditLog");
 const { getMenuItemsForRole, filterMenuItemsByPackage } = require("../utils/menuItems");
-const { isHospitalSubscriptionActive, getSubscriptionStatus, getTrialEndsAt } = require("../utils/subscriptionStatus");
+const {
+  isHospitalSubscriptionActive,
+  getSubscriptionStatus,
+  getTrialEndsAtMinutes,
+  getNextSubscriptionEndsAtMinutes,
+} = require("../utils/subscriptionStatus");
 const { deleteFile, toRelativeUploadPath } = require("../middleware/upload");
 const { ALL_MENU_KEYS } = require("../constants/menuKeys");
 
@@ -60,6 +67,40 @@ const getSuperAdminRoleId = async () => {
 
 const VALID_PACKAGES = ["silver", "gold"];
 
+function buildPaymentRequiredPayload(hospital) {
+  const pkg = String(hospital.subscription_package || "silver").toLowerCase();
+  return {
+    hospital_id: hospital.id,
+    subscription_package: hospital.subscription_package,
+    amount_kes_subunits: getPackageAmountKesSubunits(pkg),
+    package_amounts_kes_subunits: { ...PACKAGE_AMOUNT_KES_SUBUNITS },
+    paystack_public_key: (config.paystack && config.paystack.publicKey) || process.env.PAYSTACK_PUBLIC_KEY || null,
+  };
+}
+
+const MAX_ORG_JWT_SEC = 7 * 24 * 3600;
+
+/** JWT expires at the earliest of trial end or subscription end (seconds), capped at 7d; legacy hospitals use 7d. */
+function getOrgUserJwtExpiresIn(hospital) {
+  if (!hospital) return "7d";
+  const now = Date.now();
+  if (hospital.trial_ends_at == null && hospital.subscription_ends_at == null) {
+    return "7d";
+  }
+  const ends = [];
+  if (hospital.trial_ends_at) {
+    const t = new Date(hospital.trial_ends_at).getTime();
+    if (t > now) ends.push(t);
+  }
+  if (hospital.subscription_ends_at) {
+    const t = new Date(hospital.subscription_ends_at).getTime();
+    if (t > now) ends.push(t);
+  }
+  if (ends.length === 0) return 120;
+  const sec = Math.floor((Math.min(...ends) - now) / 1000);
+  return Math.min(Math.max(1, sec), MAX_ORG_JWT_SEC);
+}
+
 /**
  * Register a new organization (hospital/clinic) with first user as Super Admin.
  * Body (JSON): hospital: { name, address?, phone?, email? }, full_name, email, password, confirm_password, package: 'silver'|'gold'
@@ -74,6 +115,7 @@ const registerOrganization = async (req, res) => {
     let password;
     let confirm_password;
     let pkg;
+    let paystack_reference;
 
     if (req.body.hospital && typeof req.body.hospital === "object") {
       hospitalPayload = req.body.hospital;
@@ -83,6 +125,7 @@ const registerOrganization = async (req, res) => {
       password = req.body.password;
       confirm_password = req.body.confirm_password;
       pkg = req.body.package;
+      paystack_reference = req.body.paystack_reference;
     } else {
       hospitalPayload = {
         name: req.body.hospital_name,
@@ -96,6 +139,7 @@ const registerOrganization = async (req, res) => {
       password = req.body.password;
       confirm_password = req.body.confirm_password;
       pkg = req.body.package;
+      paystack_reference = req.body.paystack_reference;
     }
 
     if (!full_name || !email || !password) {
@@ -117,6 +161,27 @@ const registerOrganization = async (req, res) => {
         message: "package must be silver or gold",
       });
     }
+
+    let paystackRefToStore = null;
+    let paystackVerification = null;
+    const ref = paystack_reference != null ? String(paystack_reference).trim() : "";
+    if (ref) {
+      const refInUse = await Hospital.findOne({ where: { registration_paystack_reference: ref } });
+      if (refInUse) {
+        return res.status(400).json({
+          success: false,
+          message: "This payment has already been used for a registration.",
+        });
+      }
+      try {
+        paystackVerification = await verifyRegistrationTransaction(ref, packageVal, email);
+      } catch (e) {
+        const status = e.status || 500;
+        return res.status(status).json({ success: false, message: e.message });
+      }
+      paystackRefToStore = ref;
+    }
+
     if (confirm_password != null && password !== confirm_password) {
       return res.status(400).json({ success: false, message: "Passwords do not match" });
     }
@@ -135,7 +200,10 @@ const registerOrganization = async (req, res) => {
     }
 
     const logoPath = req.file ? toRelativeUploadPath(req.file.path) : null;
-    const trialEndsAt = getTrialEndsAt();
+    const trialEndsAt = paystackRefToStore ? null : getTrialEndsAtMinutes(config.organizationTrialMinutes);
+    const subscriptionEndsAt = paystackRefToStore
+      ? getNextSubscriptionEndsAtMinutes(null, config.organizationSubscriptionMinutes)
+      : null;
     const hospital = await Hospital.create({
       name: String(hospitalPayload.name).trim(),
       address: hospitalPayload.address ? String(hospitalPayload.address).trim() : null,
@@ -144,7 +212,8 @@ const registerOrganization = async (req, res) => {
       logo_path: logoPath,
       subscription_package: packageVal,
       trial_ends_at: trialEndsAt,
-      subscription_ends_at: null,
+      subscription_ends_at: subscriptionEndsAt,
+      registration_paystack_reference: paystackRefToStore,
     });
 
     const superAdminRole = await Role.create({
@@ -166,7 +235,53 @@ const registerOrganization = async (req, res) => {
       last_login: null,
     });
 
-    const token = jwt.sign({ id: user.id, type: "user" }, config.jwtSecret, { expiresIn: "7d" });
+    if (paystackVerification && paystackRefToStore) {
+      const d = paystackVerification;
+      const safePayload = {
+        id: d.id,
+        reference: d.reference,
+        amount: d.amount,
+        currency: d.currency,
+        paid_at: d.paid_at,
+        channel: d.channel,
+        customer: d.customer ? { id: d.customer.id, email: d.customer.email } : null,
+      };
+      await RegistrationPackagePayment.create({
+        hospital_id: hospital.id,
+        paystack_reference: paystackRefToStore,
+        paystack_transaction_id: d.id != null ? String(d.id) : null,
+        payer_email: String(email).toLowerCase().trim(),
+        subscription_package: packageVal,
+        amount_kes_subunits: Number(d.amount),
+        currency: d.currency || "KES",
+        paid_at: d.paid_at ? new Date(d.paid_at) : new Date(),
+        channel: d.channel || null,
+        paystack_customer_code: d.customer?.customer_code != null ? String(d.customer.customer_code) : null,
+        raw_paystack_data: JSON.stringify(safePayload),
+      });
+      await RegistrationInvoice.create({
+        hospital_id: hospital.id,
+        subscription_package: packageVal,
+        amount_kes_subunits: Number(d.amount),
+        currency: d.currency || "KES",
+        status: "paid",
+        paid_at: new Date(),
+      });
+    } else {
+      await RegistrationInvoice.create({
+        hospital_id: hospital.id,
+        subscription_package: packageVal,
+        amount_kes_subunits: getPackageAmountKesSubunits(packageVal),
+        currency: "KES",
+        status: "unpaid",
+        paid_at: null,
+      });
+    }
+
+    const jwtExpiresIn = getOrgUserJwtExpiresIn(hospital);
+    const token = jwt.sign({ id: user.id, type: "user" }, config.jwtSecret, { expiresIn: jwtExpiresIn });
+    const tokenExpiresIn =
+      typeof jwtExpiresIn === "number" ? `${jwtExpiresIn}s` : String(jwtExpiresIn);
     const role = await Role.findByPk(superAdminRole.id);
     let menuItems = await getMenuItemsForRole(role.id, role.name);
     menuItems = filterMenuItemsByPackage(menuItems, hospital.subscription_package);
@@ -191,7 +306,13 @@ const registerOrganization = async (req, res) => {
           subscription_ends_at: hospital.subscription_ends_at,
           subscription_status: subscriptionStatus,
         },
+        registration_invoice: {
+          status: paystackRefToStore ? "paid" : "unpaid",
+          amount_kes_subunits: getPackageAmountKesSubunits(packageVal),
+        },
         token,
+        token_expires_in: tokenExpiresIn,
+        token_expires_in_seconds: typeof jwtExpiresIn === "number" ? jwtExpiresIn : null,
         menuItems,
       },
     });
@@ -270,6 +391,8 @@ const login = async (req, res) => {
       return res.status(403).json({ success: false, message: "Account is not active" });
     }
 
+    const role = await Role.findByPk(user.role_id);
+
     let hospital = null;
     if (user.hospital_id) {
       try {
@@ -279,20 +402,35 @@ const login = async (req, res) => {
       }
     }
 
-    // Pilot: subscription check disabled — re-enable when rolling out
-    // if (hospital && !isHospitalSubscriptionActive(hospital)) {
-    //   const subscriptionStatus = getSubscriptionStatus(hospital);
-    //   return res.status(403).json({
-    //     success: false,
-    //     message: subscriptionStatus.message || "Subscription has expired. Renew to continue using the system.",
-    //     code: "SUBSCRIPTION_EXPIRED",
-    //     subscription_status: subscriptionStatus,
-    //   });
-    // }
+    if (
+      hospital &&
+      !config.disableSubscriptionEnforcement &&
+      !isHospitalSubscriptionActive(hospital)
+    ) {
+      const subscriptionStatus = getSubscriptionStatus(hospital);
+      if (role?.name === SUPER_ADMIN_ROLE_NAME) {
+        return res.status(403).json({
+          success: false,
+          code: "PAYMENT_REQUIRED",
+          message:
+            subscriptionStatus.message ||
+            "Complete your subscription payment to continue. Pay with Paystack, then complete subscription or try logging in again.",
+          data: buildPaymentRequiredPayload(hospital),
+          subscription_status: subscriptionStatus,
+        });
+      }
+      return res.status(403).json({
+        success: false,
+        code: "SUBSCRIPTION_EXPIRED",
+        message:
+          "Your organization's subscription has expired or is inactive. Please contact your Super Admin to renew the subscription.",
+        subscription_status: subscriptionStatus,
+      });
+    }
 
     await user.update({ last_login: new Date() });
-    const token = jwt.sign({ id: user.id, type: "user" }, config.jwtSecret, { expiresIn: "7d" });
-    const role = await Role.findByPk(user.role_id);
+    const loginJwtExpiresIn = getOrgUserJwtExpiresIn(hospital);
+    const token = jwt.sign({ id: user.id, type: "user" }, config.jwtSecret, { expiresIn: loginJwtExpiresIn });
     let menuItems = await getMenuItemsForRole(role?.id, role?.name);
 
     if (hospital && hospital.subscription_package) {
@@ -313,12 +451,16 @@ const login = async (req, res) => {
       : null;
 
     await auditLog({ user: { id: user.id } }, { action: "LOGIN", table_name: "auth" });
+    const loginTokenExpiresLabel =
+      typeof loginJwtExpiresIn === "number" ? `${loginJwtExpiresIn}s` : String(loginJwtExpiresIn);
     return res.status(200).json({
       success: true,
       data: {
         user: sanitizeUser(user),
         role,
         token,
+        token_expires_in: loginTokenExpiresLabel,
+        token_expires_in_seconds: typeof loginJwtExpiresIn === "number" ? loginJwtExpiresIn : null,
         menuItems,
         hospital: hospitalPayload,
       },
@@ -400,16 +542,31 @@ const me = async (req, res) => {
     let menuItems = await getMenuItemsForRole(role?.id, role?.name);
     const hospital = user.hospital || (user.hospital_id ? await Hospital.findByPk(user.hospital_id) : null);
 
-    // Pilot: subscription check disabled — re-enable when rolling out
-    // if (hospital && !isHospitalSubscriptionActive(hospital)) {
-    //   const subscriptionStatus = getSubscriptionStatus(hospital);
-    //   return res.status(403).json({
-    //     success: false,
-    //     message: subscriptionStatus.message || "Subscription has expired. Renew to continue using the system.",
-    //     code: "SUBSCRIPTION_EXPIRED",
-    //     subscription_status: subscriptionStatus,
-    //   });
-    // }
+    if (
+      hospital &&
+      !config.disableSubscriptionEnforcement &&
+      !isHospitalSubscriptionActive(hospital)
+    ) {
+      const subscriptionStatus = getSubscriptionStatus(hospital);
+      if (role?.name === SUPER_ADMIN_ROLE_NAME) {
+        return res.status(403).json({
+          success: false,
+          code: "PAYMENT_REQUIRED",
+          message:
+            subscriptionStatus.message ||
+            "Complete your subscription payment to continue. Pay with Paystack, then complete subscription or try logging in again.",
+          data: buildPaymentRequiredPayload(hospital),
+          subscription_status: subscriptionStatus,
+        });
+      }
+      return res.status(403).json({
+        success: false,
+        code: "SUBSCRIPTION_EXPIRED",
+        message:
+          "Your organization's subscription has expired or is inactive. Please contact your Super Admin to renew the subscription.",
+        subscription_status: subscriptionStatus,
+      });
+    }
 
     if (hospital && hospital.subscription_package) {
       menuItems = filterMenuItemsByPackage(menuItems, hospital.subscription_package);
