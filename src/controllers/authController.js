@@ -96,7 +96,8 @@ function getOrgUserJwtExpiresIn(hospital) {
     const t = new Date(hospital.subscription_ends_at).getTime();
     if (t > now) ends.push(t);
   }
-  if (ends.length === 0) return 120;
+  // If expired, allow enough time for data export/purge without forcing re-login every couple minutes.
+  if (ends.length === 0) return "24h";
   const sec = Math.floor((Math.min(...ends) - now) / 1000);
   return Math.min(Math.max(1, sec), MAX_ORG_JWT_SEC);
 }
@@ -402,6 +403,7 @@ const login = async (req, res) => {
       }
     }
 
+    let isExpiredSuperAdmin = false;
     if (
       hospital &&
       !config.disableSubscriptionEnforcement &&
@@ -409,29 +411,28 @@ const login = async (req, res) => {
     ) {
       const subscriptionStatus = getSubscriptionStatus(hospital);
       if (role?.name === SUPER_ADMIN_ROLE_NAME) {
+        // Expired-mode: let Super Admin login, but API will restrict them to export/delete only.
+        isExpiredSuperAdmin = true;
+      } else {
         return res.status(403).json({
           success: false,
-          code: "PAYMENT_REQUIRED",
+          code: "SUBSCRIPTION_EXPIRED",
           message:
-            subscriptionStatus.message ||
-            "Complete your subscription payment to continue. Pay with Paystack, then complete subscription or try logging in again.",
-          data: buildPaymentRequiredPayload(hospital),
+            "Your organization's subscription has expired or is inactive. Please contact your Super Admin to renew the subscription.",
           subscription_status: subscriptionStatus,
         });
       }
-      return res.status(403).json({
-        success: false,
-        code: "SUBSCRIPTION_EXPIRED",
-        message:
-          "Your organization's subscription has expired or is inactive. Please contact your Super Admin to renew the subscription.",
-        subscription_status: subscriptionStatus,
-      });
     }
 
     await user.update({ last_login: new Date() });
     const loginJwtExpiresIn = getOrgUserJwtExpiresIn(hospital);
     const token = jwt.sign({ id: user.id, type: "user" }, config.jwtSecret, { expiresIn: loginJwtExpiresIn });
     let menuItems = await getMenuItemsForRole(role?.id, role?.name);
+
+    if (isExpiredSuperAdmin) {
+      // Sidebar should only show Settings (where export + purge live).
+      menuItems = ["settings"];
+    }
 
     if (hospital && hospital.subscription_package) {
       menuItems = filterMenuItemsByPackage(menuItems, hospital.subscription_package);
@@ -447,6 +448,8 @@ const login = async (req, res) => {
           trial_ends_at: hospital.trial_ends_at,
           subscription_ends_at: hospital.subscription_ends_at,
           subscription_status: subscriptionStatus,
+          paystack_public_key:
+            (config.paystack && config.paystack.publicKey) || process.env.PAYSTACK_PUBLIC_KEY || null,
         }
       : null;
 
@@ -542,6 +545,7 @@ const me = async (req, res) => {
     let menuItems = await getMenuItemsForRole(role?.id, role?.name);
     const hospital = user.hospital || (user.hospital_id ? await Hospital.findByPk(user.hospital_id) : null);
 
+    let isExpiredSuperAdmin = false;
     if (
       hospital &&
       !config.disableSubscriptionEnforcement &&
@@ -549,23 +553,21 @@ const me = async (req, res) => {
     ) {
       const subscriptionStatus = getSubscriptionStatus(hospital);
       if (role?.name === SUPER_ADMIN_ROLE_NAME) {
+        // Expired-mode: allow me() so the Settings page can load export/purge actions.
+        isExpiredSuperAdmin = true;
+      } else {
         return res.status(403).json({
           success: false,
-          code: "PAYMENT_REQUIRED",
+          code: "SUBSCRIPTION_EXPIRED",
           message:
-            subscriptionStatus.message ||
-            "Complete your subscription payment to continue. Pay with Paystack, then complete subscription or try logging in again.",
-          data: buildPaymentRequiredPayload(hospital),
+            "Your organization's subscription has expired or is inactive. Please contact your Super Admin to renew the subscription.",
           subscription_status: subscriptionStatus,
         });
       }
-      return res.status(403).json({
-        success: false,
-        code: "SUBSCRIPTION_EXPIRED",
-        message:
-          "Your organization's subscription has expired or is inactive. Please contact your Super Admin to renew the subscription.",
-        subscription_status: subscriptionStatus,
-      });
+    }
+
+    if (isExpiredSuperAdmin) {
+      menuItems = ["settings"];
     }
 
     if (hospital && hospital.subscription_package) {
@@ -587,6 +589,8 @@ const me = async (req, res) => {
               trial_ends_at: hospital.trial_ends_at,
               subscription_ends_at: hospital.subscription_ends_at,
               subscription_status: subscriptionStatus,
+              paystack_public_key:
+                (config.paystack && config.paystack.publicKey) || process.env.PAYSTACK_PUBLIC_KEY || null,
             }
           : null,
       },

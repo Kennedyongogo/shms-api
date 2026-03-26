@@ -4,6 +4,22 @@ const config = require("../config/config");
 const { isHospitalSubscriptionActive, getSubscriptionStatus } = require("../utils/subscriptionStatus");
 const { getPackageAmountKesSubunits, PACKAGE_AMOUNT_KES_SUBUNITS } = require("../constants/registrationPackages");
 
+const isExpiredModeAllowedRequest = (req) => {
+  const originalUrl = (req.originalUrl || "").split("?")[0];
+
+  // Settings page needs profile data
+  if (originalUrl === "/api/auth/me") return true;
+
+  // Data portability
+  if (/^\/api\/hospitals\/[^/]+\/export-data$/.test(originalUrl)) return true;
+  if (/^\/api\/hospitals\/[^/]+\/purge-organization$/.test(originalUrl)) return true;
+
+  // Header tries to load notifications; failing that would break the whole refresh block.
+  if (originalUrl === "/api/notifications/me") return true;
+
+  return false;
+};
+
 const extractBearerToken = (req) => {
   const authHeader = req.header("Authorization");
   return authHeader && authHeader.startsWith("Bearer ")
@@ -68,13 +84,16 @@ exports.authenticateUser = async (req, res, next) => {
         const subscriptionStatus = getSubscriptionStatus(hospital);
         const isSuperAdmin = role?.name === "Super Admin";
         if (isSuperAdmin) {
+          // Expired mode: allow only data export + purge (and minimal supporting endpoints).
+          if (isExpiredModeAllowedRequest(req)) return next();
+
           const pkg = String(hospital.subscription_package || "silver").toLowerCase();
           return res.status(403).json({
             success: false,
             code: "PAYMENT_REQUIRED",
             message:
               subscriptionStatus.message ||
-              "Subscription inactive. Complete payment or wait for your organization subscription to be renewed.",
+              "Subscription inactive. Complete payment or use data export/delete to remove your organization.",
             data: {
               hospital_id: hospital.id,
               subscription_package: hospital.subscription_package,

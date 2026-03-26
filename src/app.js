@@ -250,6 +250,16 @@ function getOllamaBaseUrl() {
   return (process.env.OLLAMA_BASE_URL || "http://localhost:11434").replace(/\/$/, "");
 }
 
+function getOllamaTimeoutMs() {
+  const v = parseInt(process.env.OLLAMA_TIMEOUT_MS || "", 10);
+  return Number.isFinite(v) && v > 0 ? v : 55000;
+}
+
+function getOllamaNumPredict() {
+  const v = parseInt(process.env.OLLAMA_NUM_PREDICT || "", 10);
+  return Number.isFinite(v) && v > 0 ? v : 200;
+}
+
 // GET /api/ai/ollama-status — check configured URL and if Ollama is reachable (for debugging on server)
 app.get("/api/ai/ollama-status", async (req, res) => {
   const ollamaBaseUrl = getOllamaBaseUrl();
@@ -281,6 +291,7 @@ app.post("/api/ai/guest-chat", async (req, res) => {
       });
     }
 
+    const startedAt = Date.now();
     const dbContext = await getAiContextFromDb();
     const systemPrompt = `${AI_SYSTEM_CONTEXT}${dbContext}
 
@@ -289,19 +300,30 @@ User question: ${message}
 Answer based only on the system information above.`;
 
     const ollamaBaseUrl = getOllamaBaseUrl();
-    const ollamaResponse = await fetch(`${ollamaBaseUrl}/api/generate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "llama3.2:3b",
-        prompt: systemPrompt,
-        stream: false,
-        options: {
-          temperature: 0.3,
-          num_predict: 400,
-        },
-      }),
-    });
+    const controller = new AbortController();
+    const timeoutMs = getOllamaTimeoutMs();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const numPredict = getOllamaNumPredict();
+    let ollamaResponse;
+
+    try {
+      ollamaResponse = await fetch(`${ollamaBaseUrl}/api/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          model: "llama3.2:3b",
+          prompt: systemPrompt,
+          stream: false,
+          options: {
+            temperature: 0.3,
+            num_predict: numPredict,
+          },
+        }),
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     // If Ollama returns a non-2xx status, log the full body for debugging
     if (!ollamaResponse.ok) {
@@ -325,6 +347,11 @@ Answer based only on the system information above.`;
       });
     }
 
+    const elapsedMs = Date.now() - startedAt;
+    if (elapsedMs > 2000) {
+      console.log(`🤖 Guest AI chat OK in ${elapsedMs}ms (num_predict=${numPredict})`);
+    }
+
     return res.status(200).json({
       success: true,
       message: aiText,
@@ -333,6 +360,18 @@ Answer based only on the system information above.`;
     const ollamaBaseUrl = getOllamaBaseUrl();
     console.error("❌ Guest AI chat error:", error);
     console.error("   Ollama URL used:", ollamaBaseUrl, "| OLLAMA_BASE_URL set:", !!process.env.OLLAMA_BASE_URL);
+
+    const isTimeout =
+      error?.name === "AbortError" ||
+      error?.code === "ABORT_ERR" ||
+      (typeof error?.message === "string" && error.message.toLowerCase().includes("aborted"));
+
+    if (isTimeout) {
+      return res.status(504).json({
+        success: false,
+        message: "AI response took too long. Please try again.",
+      });
+    }
 
     return res.status(500).json({
       success: false,
