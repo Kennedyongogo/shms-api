@@ -10,6 +10,7 @@ const { getMenuItemsForRole, filterMenuItemsByPackage } = require("../utils/menu
 const {
   isHospitalSubscriptionActive,
   getSubscriptionStatus,
+  getStaffSubscriptionExpiredMessage,
   getTrialEndsAtMinutes,
   getNextSubscriptionEndsAtMinutes,
 } = require("../utils/subscriptionStatus");
@@ -417,8 +418,7 @@ const login = async (req, res) => {
         return res.status(403).json({
           success: false,
           code: "SUBSCRIPTION_EXPIRED",
-          message:
-            "Your organization's subscription has expired or is inactive. Please contact your Super Admin to renew the subscription.",
+          message: getStaffSubscriptionExpiredMessage(hospital),
           subscription_status: subscriptionStatus,
         });
       }
@@ -559,8 +559,7 @@ const me = async (req, res) => {
         return res.status(403).json({
           success: false,
           code: "SUBSCRIPTION_EXPIRED",
-          message:
-            "Your organization's subscription has expired or is inactive. Please contact your Super Admin to renew the subscription.",
+          message: getStaffSubscriptionExpiredMessage(hospital),
           subscription_status: subscriptionStatus,
         });
       }

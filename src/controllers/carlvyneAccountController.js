@@ -1,6 +1,7 @@
 const bcrypt = require("bcryptjs");
 const { Op } = require("sequelize");
-const { CarlvyneAccount } = require("../models");
+const { sequelize } = require("../config/database");
+const { CarlvyneAccount, Admin, User } = require("../models");
 const { createCrudController, parsePagination } = require("../utils/crudControllerFactory");
 const { toRelativeUploadPath } = require("../middleware/upload");
 
@@ -60,6 +61,50 @@ const crud = createCrudController({
   defaultOrder: [["name", "ASC"]],
 });
 
+/**
+ * When CarlvyneAccount has no profile_picture_path, reuse the same person's
+ * hospital User or M&E Admin profile photo (matched by email, case-insensitive).
+ */
+async function mergeProfilePictureFromLinkedAccounts(rows) {
+  const needEmail = rows
+    .filter((r) => {
+      const j = typeof r.toJSON === "function" ? r.toJSON() : r;
+      return j.email && !j.profile_picture_path;
+    })
+    .map((r) => String((typeof r.toJSON === "function" ? r.toJSON() : r).email).trim().toLowerCase());
+  const emails = [...new Set(needEmail)];
+  if (!emails.length) return rows.map((r) => (typeof r.toJSON === "function" ? r.toJSON() : r));
+
+  const [adminRows, userRows] = await Promise.all([
+    Admin.findAll({
+      attributes: ["email", "profile_image_path"],
+      where: sequelize.where(sequelize.fn("LOWER", sequelize.col("email")), { [Op.in]: emails }),
+    }),
+    User.findAll({
+      attributes: ["email", "profile_image_path"],
+      where: sequelize.where(sequelize.fn("LOWER", sequelize.col("email")), { [Op.in]: emails }),
+    }),
+  ]);
+  const byEmail = {};
+  for (const a of adminRows) {
+    const k = String(a.email).trim().toLowerCase();
+    if (a.profile_image_path) byEmail[k] = a.profile_image_path;
+  }
+  for (const u of userRows) {
+    const k = String(u.email).trim().toLowerCase();
+    if (!byEmail[k] && u.profile_image_path) byEmail[k] = u.profile_image_path;
+  }
+
+  return rows.map((row) => {
+    const j = typeof row.toJSON === "function" ? row.toJSON() : { ...row };
+    if (!j.profile_picture_path && j.email) {
+      const k = String(j.email).trim().toLowerCase();
+      if (byEmail[k]) j.profile_picture_path = byEmail[k];
+    }
+    return j;
+  });
+}
+
 const getAll = async (req, res) => {
   try {
     const { page, limit, offset } = parsePagination(req.query);
@@ -80,9 +125,10 @@ const getAll = async (req, res) => {
       offset,
       order: [["name", "ASC"]],
     });
+    const data = await mergeProfilePictureFromLinkedAccounts(rows);
     return res.status(200).json({
       success: true,
-      data: rows,
+      data,
       pagination: { total: count, page, limit, totalPages: Math.ceil(count / limit) },
     });
   } catch (error) {

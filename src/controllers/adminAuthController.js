@@ -3,7 +3,15 @@ const jwt = require("jsonwebtoken");
 const path = require("path");
 const { Op } = require("sequelize");
 const config = require("../config/config");
-const { Admin, Hospital, AuditLog, RegistrationPackagePayment, RegistrationInvoice } = require("../models");
+const { sequelize } = require("../config/database");
+const {
+  Admin,
+  Hospital,
+  AuditLog,
+  RegistrationPackagePayment,
+  RegistrationInvoice,
+  CarlvyneAccount,
+} = require("../models");
 const { getSubscriptionStatus } = require("../utils/subscriptionStatus");
 const { deleteFile, toRelativeUploadPath } = require("../middleware/upload");
 
@@ -13,6 +21,87 @@ const sanitizeAdmin = (admin) => {
   const { password, ...rest } = json;
   return rest;
 };
+
+const FOUNDER_PATCH_KEYS = [
+  "phone_number",
+  "bio",
+  "facebook_url",
+  "twitter_url",
+  "linkedin_url",
+  "instagram_url",
+  "website_url",
+  "primary_color",
+];
+
+/** Kenya +254 (same rules as Carlvyne account). */
+function normalizePhoneTo254(input) {
+  if (input == null || String(input).trim() === "") return null;
+  const raw = String(input).trim();
+  let p = raw.replace(/[\s\-()]/g, "");
+  if (p.startsWith("+254")) return p;
+  if (p.startsWith("254")) return `+${p}`;
+  if (p.startsWith("0") && p.length === 10) return `+254${p.slice(1)}`;
+  if (/^[71]\d{8}$/.test(p)) return `+254${p}`;
+  throw new Error('Phone must be a Kenya number in format +254XXXXXXXXX (e.g. +254712345678 or 0712345678)');
+}
+
+async function findCarlvyneForAdmin(admin) {
+  if (!admin?.email) return null;
+  const e = String(admin.email).trim().toLowerCase();
+  return CarlvyneAccount.findOne({
+    where: sequelize.where(sequelize.fn("LOWER", sequelize.col("email")), e),
+  });
+}
+
+function sanitizeCarlvyneForClient(acc) {
+  if (!acc) return null;
+  const j = acc.toJSON ? acc.toJSON() : { ...acc };
+  delete j.password;
+  return j;
+}
+
+/**
+ * Keep marketing "founder" row in sync with M&E admin profile (name, photo, optional extra columns).
+ */
+async function syncCarlvyneAccountFromAdmin(admin, founderFieldPatch) {
+  const founder = await findCarlvyneForAdmin(admin);
+  if (!founder) return null;
+  const payload = {
+    name: admin.full_name,
+    profile_picture_path: admin.profile_image_path,
+  };
+  if (founderFieldPatch && typeof founderFieldPatch === "object") {
+    Object.assign(payload, founderFieldPatch);
+  }
+  await founder.update(payload);
+  return founder;
+}
+
+function buildFounderPatchFromBody(body) {
+  if (!body || typeof body !== "object") return {};
+  const out = {};
+  for (const k of FOUNDER_PATCH_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(body, k)) continue;
+    const v = body[k];
+    if (k === "phone_number") {
+      if (v === null || v === undefined || String(v).trim() === "") {
+        out.phone_number = null;
+      } else {
+        out.phone_number = normalizePhoneTo254(v);
+      }
+      continue;
+    }
+    if (v === null || v === undefined || String(v).trim() === "") {
+      out[k] = null;
+    } else {
+      const s = String(v).trim();
+      if (k === "bio") out[k] = s.slice(0, 20000);
+      else if (k === "primary_color") out[k] = s.slice(0, 20);
+      else out[k] = s.slice(0, 500);
+    }
+  }
+  return out;
+}
 
 const register = async (req, res) => {
   try {
@@ -306,7 +395,14 @@ const me = async (req, res) => {
     if (!admin) {
       return res.status(404).json({ success: false, message: "Admin not found" });
     }
-    return res.status(200).json({ success: true, data: { admin: sanitizeAdmin(admin) } });
+    const founder = await findCarlvyneForAdmin(admin);
+    return res.status(200).json({
+      success: true,
+      data: {
+        admin: sanitizeAdmin(admin),
+        carlvyne_account: founder ? sanitizeCarlvyneForClient(founder) : null,
+      },
+    });
   } catch (error) {
     return res.status(500).json({
       success: false,
@@ -326,11 +422,35 @@ const updateMe = async (req, res) => {
     if (req.body?.full_name != null) {
       updates.full_name = String(req.body.full_name).trim();
     }
-    const updated = await admin.update(updates);
+    let founderPatch = {};
+    try {
+      founderPatch = buildFounderPatchFromBody(req.body);
+    } catch (e) {
+      return res.status(400).json({ success: false, message: e.message || "Invalid founder fields" });
+    }
+
+    let updated = admin;
+    if (Object.keys(updates).length) {
+      updated = await admin.update(updates);
+    }
+    await updated.reload();
+
+    const founder = await findCarlvyneForAdmin(updated);
+    if (founder) {
+      await syncCarlvyneAccountFromAdmin(
+        updated,
+        Object.keys(founderPatch).length ? founderPatch : null
+      );
+    }
+
+    const founderOut = founder ? await findCarlvyneForAdmin(updated) : null;
     return res.status(200).json({
       success: true,
       message: "Profile updated successfully",
-      data: { admin: sanitizeAdmin(updated) },
+      data: {
+        admin: sanitizeAdmin(updated),
+        carlvyne_account: founderOut ? sanitizeCarlvyneForClient(founderOut) : null,
+      },
     });
   } catch (error) {
     return res.status(500).json({
@@ -361,10 +481,15 @@ const updateMyProfileImage = async (req, res) => {
 
     const relative = toRelativeUploadPath(req.file.path);
     const updated = await admin.update({ profile_image_path: relative });
+    await syncCarlvyneAccountFromAdmin(updated);
+    const founder = await findCarlvyneForAdmin(updated);
     return res.status(200).json({
       success: true,
       message: "Profile picture updated",
-      data: { admin: sanitizeAdmin(updated) },
+      data: {
+        admin: sanitizeAdmin(updated),
+        carlvyne_account: founder ? sanitizeCarlvyneForClient(founder) : null,
+      },
     });
   } catch (error) {
     return res.status(500).json({
@@ -396,6 +521,10 @@ const changePassword = async (req, res) => {
 
     const hashed = await bcrypt.hash(newPassword, 10);
     await admin.update({ password: hashed });
+    const founder = await findCarlvyneForAdmin(admin);
+    if (founder) {
+      await founder.update({ password: hashed });
+    }
     return res.status(200).json({ success: true, message: "Password updated successfully" });
   } catch (error) {
     return res.status(500).json({

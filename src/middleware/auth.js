@@ -1,7 +1,11 @@
 const jwt = require("jsonwebtoken");
 const { User, Role, Permission, Patient, CarlvyneAccount, Admin, Hospital } = require("../models");
 const config = require("../config/config");
-const { isHospitalSubscriptionActive, getSubscriptionStatus } = require("../utils/subscriptionStatus");
+const {
+  isHospitalSubscriptionActive,
+  getSubscriptionStatus,
+  getStaffSubscriptionExpiredMessage,
+} = require("../utils/subscriptionStatus");
 const { getPackageAmountKesSubunits, PACKAGE_AMOUNT_KES_SUBUNITS } = require("../constants/registrationPackages");
 
 const isExpiredModeAllowedRequest = (req) => {
@@ -107,8 +111,7 @@ exports.authenticateUser = async (req, res, next) => {
         return res.status(403).json({
           success: false,
           code: "SUBSCRIPTION_EXPIRED",
-          message:
-            "Your organization's subscription has expired or is inactive. Please contact your Super Admin to renew the subscription.",
+          message: getStaffSubscriptionExpiredMessage(hospital),
           subscription_status: subscriptionStatus,
         });
       }

@@ -72,6 +72,19 @@ function getSubscriptionStatus(hospital) {
 }
 
 /**
+ * User-facing copy when non–Super Admin is blocked (login / me) due to inactive subscription.
+ * @param {Object|null|undefined} hospital - Sequelize Hospital or plain { name }
+ * @returns {string}
+ */
+function getStaffSubscriptionExpiredMessage(hospital) {
+  const name = hospital?.name != null ? String(hospital.name).trim() : "";
+  if (name) {
+    return `The subscription for ${name} has expired or is inactive. Please contact your Super Admin to renew the subscription.`;
+  }
+  return "This hospital's subscription has expired or is inactive. Please contact your Super Admin to renew the subscription.";
+}
+
+/**
  * Add 7 days from now for trial end (legacy callers).
  * @returns {Date}
  */
@@ -127,6 +140,7 @@ module.exports = {
   DEFAULT_SUBSCRIPTION_DAYS,
   isHospitalSubscriptionActive,
   getSubscriptionStatus,
+  getStaffSubscriptionExpiredMessage,
   getTrialEndsAt,
   getTrialEndsAtMinutes,
   getNextSubscriptionEndsAt,
