@@ -73,12 +73,11 @@ module.exports = {
   /** When true, POST /register-organization skips Paystack (local/dev only). */
   skipOrganizationRegistrationPayment: process.env.SKIP_ORGANIZATION_REGISTRATION_PAYMENT === "true",
 
-  /** Trial length for new organizations (minutes). Default 10 for testing; set e.g. 10080 for 7 days. */
+  /** Legacy/testing-only minute override; package-based day trials are used by registration flow. */
   organizationTrialMinutes: Math.max(1, parseInt(process.env.ORGANIZATION_TRIAL_MINUTES || "10", 10)),
 
   /**
-   * Paid subscription length after Paystack (minutes). Default 10 for testing (matches trial).
-   * Production: e.g. 43200 (= 30 days) or use renewal flows with days elsewhere.
+   * Legacy/testing-only minute override; organization renewals now use fixed 30-day periods.
    */
   organizationSubscriptionMinutes: Math.max(
     1,

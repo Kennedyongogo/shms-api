@@ -1,5 +1,5 @@
 /**
- * Hospital subscription status: 7-day trial, then paid 30-day periods.
+ * Hospital subscription status: package trial first, then paid 30-day periods.
  * When trial and paid period are both expired, all users in that hospital are blocked from login.
  */
 
@@ -85,7 +85,7 @@ function getStaffSubscriptionExpiredMessage(hospital) {
 }
 
 /**
- * Add 7 days from now for trial end (legacy callers).
+ * Add default trial days from now (legacy callers).
  * @returns {Date}
  */
 function getTrialEndsAt() {
@@ -95,7 +95,18 @@ function getTrialEndsAt() {
 }
 
 /**
- * Trial end = now + N minutes (organization registration).
+ * Trial end = now + N days (organization registration).
+ * @param {number} days
+ * @returns {Date}
+ */
+function getTrialEndsAtDays(days) {
+  const d = new Date();
+  d.setDate(d.getDate() + Math.max(1, Number(days) || TRIAL_DAYS));
+  return d;
+}
+
+/**
+ * Trial end = now + N minutes (legacy/testing callers).
  * @param {number} minutes
  * @returns {Date}
  */
@@ -142,6 +153,7 @@ module.exports = {
   getSubscriptionStatus,
   getStaffSubscriptionExpiredMessage,
   getTrialEndsAt,
+  getTrialEndsAtDays,
   getTrialEndsAtMinutes,
   getNextSubscriptionEndsAt,
   getNextSubscriptionEndsAtMinutes,

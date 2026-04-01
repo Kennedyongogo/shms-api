@@ -38,7 +38,7 @@ module.exports = (sequelize) => {
       trial_ends_at: {
         type: DataTypes.DATE,
         allowNull: true,
-        comment: "End of 7-day trial. After this, subscription_ends_at must be set (paid) to allow login.",
+        comment: "End of package trial (Silver: 7 days, Gold: 14 days). After this, a paid 30-day subscription is required for login.",
       },
       subscription_ends_at: {
         type: DataTypes.DATE,

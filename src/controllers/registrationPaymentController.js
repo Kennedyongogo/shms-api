@@ -6,7 +6,7 @@ const {
 } = require("../services/paystackService");
 const { getPackageAmountKesSubunits, VALID_PACKAGES } = require("../constants/registrationPackages");
 const {
-  getNextSubscriptionEndsAtMinutes,
+  getNextSubscriptionEndsAt,
   getSubscriptionStatus,
   isHospitalSubscriptionActive,
 } = require("../utils/subscriptionStatus");
@@ -211,7 +211,7 @@ const completeOrganizationSubscription = async (req, res) => {
     }
 
     const d = paystackVerification;
-    const subEnds = getNextSubscriptionEndsAtMinutes(null, config.organizationSubscriptionMinutes);
+    const subEnds = getNextSubscriptionEndsAt(null);
 
     const safePayload = {
       id: d.id,

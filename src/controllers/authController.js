@@ -3,7 +3,11 @@ const jwt = require("jsonwebtoken");
 const path = require("path");
 const { User, Role, Hospital, RoleMenuItem, RegistrationPackagePayment, RegistrationInvoice } = require("../models");
 const config = require("../config/config");
-const { getPackageAmountKesSubunits, PACKAGE_AMOUNT_KES_SUBUNITS } = require("../constants/registrationPackages");
+const {
+  getPackageAmountKesSubunits,
+  getPackageTrialDays,
+  PACKAGE_AMOUNT_KES_SUBUNITS,
+} = require("../constants/registrationPackages");
 const { verifyRegistrationTransaction } = require("../services/paystackService");
 const { auditLog } = require("../utils/auditLog");
 const { getMenuItemsForRole, filterMenuItemsByPackage } = require("../utils/menuItems");
@@ -11,8 +15,8 @@ const {
   isHospitalSubscriptionActive,
   getSubscriptionStatus,
   getStaffSubscriptionExpiredMessage,
-  getTrialEndsAtMinutes,
-  getNextSubscriptionEndsAtMinutes,
+  getTrialEndsAtDays,
+  getNextSubscriptionEndsAt,
 } = require("../utils/subscriptionStatus");
 const { deleteFile, toRelativeUploadPath } = require("../middleware/upload");
 const { ALL_MENU_KEYS } = require("../constants/menuKeys");
@@ -202,9 +206,9 @@ const registerOrganization = async (req, res) => {
     }
 
     const logoPath = req.file ? toRelativeUploadPath(req.file.path) : null;
-    const trialEndsAt = paystackRefToStore ? null : getTrialEndsAtMinutes(config.organizationTrialMinutes);
+    const trialEndsAt = paystackRefToStore ? null : getTrialEndsAtDays(getPackageTrialDays(packageVal));
     const subscriptionEndsAt = paystackRefToStore
-      ? getNextSubscriptionEndsAtMinutes(null, config.organizationSubscriptionMinutes)
+      ? getNextSubscriptionEndsAt(null)
       : null;
     const hospital = await Hospital.create({
       name: String(hospitalPayload.name).trim(),
