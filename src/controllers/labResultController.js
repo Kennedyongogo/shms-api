@@ -158,7 +158,7 @@ const enterResults = async (req, res) => {
 
     // Template-aware result entry:
     // If a template exists for this test, expect `results` (object) and store it in LabResultData.
-    // Supports checkbox (boolean), text (string), multi_text (array of strings), number, select, multi_select.
+    // Supports checkbox (boolean, or string[] when options are set), text (string), multi_text (array of strings), number, select, multi_select.
     const templateRow = item.labTest?.template || (item.lab_test_id ? await LabTestTemplate.findOne({ where: { lab_test_id: item.lab_test_id } }) : null);
     const template = templateRow?.template || null;
     const templateVersion = templateRow?.version || 1;
@@ -244,7 +244,20 @@ const enterResults = async (req, res) => {
         if (isEmpty) continue;
 
         if (type === "checkbox" || type === "boolean") {
-          if (typeof v !== "boolean") errors.push(`${key} must be boolean`);
+          const listOpts = Array.isArray(f.options) && f.options.length > 0 ? f.options.map(String) : null;
+          if (listOpts) {
+            if (!Array.isArray(v)) {
+              errors.push(`${key} must be an array of selected options`);
+            } else {
+              for (const choice of v) {
+                if (!listOpts.includes(String(choice))) {
+                  errors.push(`${key} has invalid option: ${choice}`);
+                }
+              }
+            }
+          } else if (typeof v !== "boolean") {
+            errors.push(`${key} must be boolean`);
+          }
         } else if (type === "number") {
           const n = typeof v === "number" ? v : Number(v);
           if (!Number.isFinite(n)) errors.push(`${key} must be a number`);

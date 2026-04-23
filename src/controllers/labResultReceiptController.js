@@ -61,6 +61,9 @@ function formatFieldValue(field, value) {
   const type = String(field?.type || "text").toLowerCase();
 
   if (type === "checkbox" || type === "boolean") {
+    if (Array.isArray(value) && value.length) {
+      return value.map(String).join(", ");
+    }
     return value === true || String(value).toLowerCase() === "true" ? "Yes" : "No";
   }
 
